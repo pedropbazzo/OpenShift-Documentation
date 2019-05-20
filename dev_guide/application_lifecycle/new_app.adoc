@@ -1,0 +1,619 @@
+[[dev-guide-new-app]]
+= Creating New Applications
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+toc::[]
+
+== Overview
+
+You can create a new {product-title} application from components including
+source or binary code, images and/or templates by using either the OpenShift CLI
+or web console.
+
+[[using-the-cli]]
+
+== Creating an Application Using the CLI
+
+[[specifying-source-code]]
+
+=== Creating an Application From Source Code
+
+The `new-app` command allows you to create applications from source code in a
+local or remote Git repository.
+
+To create an application using a Git repository in a local directory:
+
+----
+$ oc new-app /path/to/source/code
+----
+
+[NOTE]
+====
+If using a local Git repository, the repository should have a remote named
+*origin* that points to a URL accessible by the {product-title} cluster.  If
+there is no recognised remote, `new-app` will create a
+xref:../builds/build_inputs.adoc#binary-source[binary build].
+====
+
+To create an application using a remote Git repository:
+
+----
+$ oc new-app https://github.com/sclorg/cakephp-ex
+----
+
+To create an application using a private remote Git repository:
+
+----
+$ oc new-app https://github.com/youruser/yourprivaterepo --source-secret=yoursecret
+----
+
+[NOTE]
+====
+If using a private remote Git repository, you can use the `--source-secret` flag to
+specify an existing xref:../../dev_guide/builds/build_inputs.adoc#source-clone-secrets[source clone secret]
+that will get injected into your `BuildConfig` to access the repository.
+====
+
+You can use a subdirectory of your source code repository by specifying a
+`--context-dir` flag. To create an application using a remote Git repository and a context subdirectory:
+
+----
+$ oc new-app https://github.com/sclorg/s2i-ruby-container.git \
+    --context-dir=2.0/test/puma-test-app
+----
+
+Also, when specifying a remote URL, you can specify a Git branch to use by
+appending `#<branch_name>` to the end of the URL:
+
+----
+$ oc new-app https://github.com/openshift/ruby-hello-world.git#beta4
+----
+
+The `new-app` command creates a xref:../../dev_guide/builds/index.adoc#defining-a-buildconfig[build configuration], which itself creates a new application
+xref:../../architecture/core_concepts/builds_and_image_streams.adoc#image-streams[image]
+from your source code. The `new-app` command typically also creates a
+xref:../../architecture/core_concepts/deployments.adoc#deployments-and-deployment-configurations[deployment
+configuration] to deploy the new image, and a
+xref:../../architecture/core_concepts/pods_and_services.adoc#services[service] to
+provide load-balanced access to the deployment running your image.
+
+{product-title} automatically xref:build-strategy-detection[detects] whether the
+ifndef::openshift-online[]
+`*Docker*`,
+endif::[]
+`*Pipeline*` or `*Source*`
+xref:../../architecture/core_concepts/builds_and_image_streams.adoc#builds[build
+strategy] should be used, and in the case of `*Source*` builds,
+xref:language-detection[detects an appropriate language builder image].
+
+[[build-strategy-detection]]
+
+**Build Strategy Detection**
+
+If a *_Jenkinsfile_* exists in the root or specified context directory of the
+source repository when creating a new application, {product-title} generates a
+xref:../../architecture/core_concepts/builds_and_image_streams.adoc#pipeline-build[`*Pipeline*`
+build strategy].
+ifndef::openshift-online[]
+Otherwise, if a *_Dockerfile_* is found, {product-title}
+generates a
+xref:../../architecture/core_concepts/builds_and_image_streams.adoc#docker-build[`*Docker*`
+build strategy].
+endif::[]
+Otherwise, it generates a
+xref:../../architecture/core_concepts/builds_and_image_streams.adoc#source-build[`*Source*`
+build strategy].
+
+You can override the build strategy by setting the `--strategy` flag to either
+ifndef::openshift-online[]
+`docker`,
+endif::[]
+`pipeline` or `source`.
+
+ifndef::openshift-online[]
+----
+$ oc new-app /home/user/code/myapp --strategy=docker
+----
+endif::[]
+ifdef::openshift-online[]
+----
+$ oc new-app /home/user/code/myapp --strategy=source
+----
+endif::[]
+
+[NOTE]
+====
+The `oc` command requires that files containing build sources are available in a
+remote Git repository. For all source builds, you must use `git remote -v`.
+====
+
+[[language-detection]]
+
+**Language Detection**
+
+If using the `*Source*` build strategy, `new-app` attempts to determine the
+language builder to use by the presence of certain files in the root or
+specified context directory of the repository:
+
+.Languages Detected by `new-app`
+[cols="4,8",options="header"]
+|===
+
+|Language |Files
+ifdef::openshift-enterprise,openshift-dedicated,openshift-aro,openshift-online[]
+a|`dotnet`
+a|*_project.json_*, *_pass:[*.csproj]_*
+endif::[]
+a|`jee`
+a|*_pom.xml_*
+
+a|`nodejs`
+a|*_app.json_*, *_package.json_*
+
+a|`perl`
+a|*_cpanfile_*, *_index.pl_*
+
+a|`php`
+a|*_composer.json_*, *_index.php_*
+
+a|`python`
+a|*_requirements.txt_*, *_setup.py_*
+
+a|`ruby`
+a|*_Gemfile_*, *_Rakefile_*, *_config.ru_*
+
+a|`scala`
+a|*_build.sbt_*
+
+a|`golang`
+a|*_Godeps_*, *_main.go_*
+|===
+
+After a language is detected, `new-app` searches the {product-title} server for
+xref:../../architecture/core_concepts/builds_and_image_streams.adoc#image-streams[image
+stream] tags that have a `*supports*` annotation matching the detected language,
+or an image stream that matches the name of the detected language. If a match is
+not found, `new-app` searches the https://registry.hub.docker.com[Docker Hub
+registry] for an image that matches the detected language based on name.
+
+You can override the image the builder uses for a particular source
+repository by specifying the image (either an image stream or container
+specification) and the repository, with a `~` as a separator.  Note that if this
+is done, xref:build-strategy-detection[build strategy detection] and
+xref:language-detection[language detection] are not carried out.
+
+For example, to use the *myproject/my-ruby* image stream with the source in a
+remote repository:
+
+----
+$ oc new-app myproject/my-ruby~https://github.com/openshift/ruby-hello-world.git
+----
+
+To use the *openshift/ruby-20-centos7:latest* container image stream with the source in a local repository:
+
+----
+$ oc new-app openshift/ruby-20-centos7:latest~/home/user/code/my-ruby-app
+----
+
+[NOTE]
+====
+Language detection requires the Git client to be locally installed so that your
+repository can be cloned and inspected. If Git is not available, you can avoid
+the language detection step by specifying the builder image to use with your
+repository with the `<image>~<repository>` syntax.
+
+Using the `-i <image> <repository>` invocation requires that `new-app` attempt
+to clone `repository` in order to determine what type of artifact it is, so this
+will fail if Git is not available.
+
+Similarly using the `-i <image> --code <repository>` invocation requires
+`new-app` clone `repository` in order to determine whether `image` should be
+used as a builder for the source code, or deployed separately, as in the case of
+a database image.
+====
+
+[[specifying-an-image]]
+
+=== Creating an Application From an Image
+
+You can deploy an application from an existing image. Images can come from image
+streams in the {product-title} server, images in a specific registry or
+https://registry.hub.docker.com[Docker Hub registry], or images in the local
+Docker server.
+
+ifdef::openshift-online[]
+[IMPORTANT]
+====
+{product-title} runs containers using an arbitrarily assigned user ID. This
+behavior provides additional security against processes escaping the container
+due to a container engine vulnerability and thereby achieving escalated
+permissions on the host node. Due to this restriction, images that run as root
+will not deploy as expected on {product-title}.
+====
+endif::[]
+
+The `new-app` command attempts to determine the type of image specified in the
+arguments passed to it. However, you can explicitly tell `new-app` whether the
+image is a container image (using the `--docker-image` argument) or an image stream
+(using the `-i|--image` argument).
+
+[NOTE]
+====
+If you specify an image from your local Docker repository, you must ensure that
+the same image is available to the {product-title} cluster nodes.
+====
+
+For example, to create an application from the DockerHub MySQL image:
+
+----
+$ oc new-app mysql
+----
+
+To create an application using an image in a private registry, specify the full
+container image specification:
+
+----
+$ oc new-app myregistry:5000/example/myimage
+----
+
+[NOTE]
+====
+If the registry containing the image is not
+ifdef::openshift-enterprise,openshift-origin[]
+xref:../../install_config/registry/securing_and_exposing_registry.adoc#securing-the-registry[secured
+with SSL],
+endif::[]
+ifdef::openshift-dedicated[]
+secured with SSL,
+endif::[]
+cluster administrators must ensure that the Docker daemon on the {product-title}
+node hosts is run with the `--insecure-registry` flag pointing to that registry.
+You must also tell `new-app` that the image comes from an insecure registry with
+the `--insecure-registry` flag.
+====
+
+You can create an application from an existing
+xref:../../architecture/core_concepts/builds_and_image_streams.adoc#image-streams[image
+stream] and optional
+xref:../../architecture/core_concepts/builds_and_image_streams.adoc#image-stream-tag[image
+stream tag]:
+
+----
+$ oc new-app my-stream:v1
+----
+
+[[specifying-a-template]]
+
+=== Creating an Application From a Template
+
+You can create an application from a previously stored
+xref:../templates.adoc#dev-guide-templates[template] or from a template file, by
+specifying the name of the template as an argument. For example, you can store a
+https://github.com/openshift/origin/tree/master/examples/sample-app[sample
+application template] and use it to create an application.
+
+To create an application from a stored template:
+
+----
+$ oc create -f examples/sample-app/application-template-stibuild.json
+$ oc new-app ruby-helloworld-sample
+----
+
+To directly use a template in your local file system, without first storing it
+in {product-title}, use the `-f|--file` argument:
+
+----
+$ oc new-app -f examples/sample-app/application-template-stibuild.json
+----
+
+[[template-parameters]]
+
+**Template Parameters**
+
+When creating an application based on a xref:../templates.adoc#dev-guide-templates[template], use the
+`-p|--param` argument to set parameter values defined by the template:
+
+----
+$ oc new-app ruby-helloworld-sample \
+    -p ADMIN_USERNAME=admin -p ADMIN_PASSWORD=mypassword
+----
+
+You can store your parameters in a file, then use that file with
+`--param-file` when instantiating a template. If you want to read the
+parameters from standard input, use `--param-file=-`:
+
+
+----
+$ cat helloworld.params
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=mypassword
+$ oc new-app ruby-helloworld-sample --param-file=helloworld.params
+$ cat helloworld.params | oc new-app ruby-helloworld-sample --param-file=-
+----
+
+[[new-app-output]]
+
+=== Further Modifying Application Creation
+
+The `new-app` command generates {product-title} objects that will build, deploy, and
+run the application being created. Normally, these objects are created in the
+current project using names derived from the input source repositories or the
+input images. However, `new-app` allows you to modify this behavior.
+
+The set of objects created by `new-app` depends on the artifacts passed as
+input: source repositories, images, or templates.
+
+[[artifacts-created-by-new-app]]
+
+.`new-app` Output Objects
+[cols="2,8",options="header"]
+|===
+
+|Object |Description
+
+a|`BuildConfig`
+a|A `BuildConfig` is created for each source repository specified in the
+command line. The `BuildConfig` specifies the strategy to use, the source
+location, and the build output location.
+
+a|`ImageStreams`
+a|For `BuildConfig`, two `ImageStreams` are usually created. One
+represents the input image. With `Source` builds, this is the builder image.
+ifndef::openshift-online[]
+With `Docker` builds, this is the *FROM* image.
+endif::[]
+The second one represents the output image. If a container image was specified
+as input to `new-app`, then an image stream is created for that image as well.
+
+a|`DeploymentConfig`
+a|A `DeploymentConfig` is created either to deploy the output of a build, or a
+specified image. The `new-app` command creates xref:../volumes.adoc#dev-guide-volumes[*emptyDir*
+volumes] for all Docker volumes that are specified in containers included in the
+resulting `DeploymentConfig`.
+
+a|`Service`
+a|The `new-app` command attempts to detect exposed ports in input images. It
+uses the lowest numeric exposed port to generate a service that exposes that
+port. In order to expose a different port, after `new-app` has completed, simply
+use the `oc expose` command to generate additional services.
+
+a|Other
+ |Other objects may be generated when instantiating
+xref:specifying-a-template[templates], according to the template.
+
+|===
+
+[[specifying-environment-variables]]
+
+==== Specifying Environment Variables
+
+When generating applications from a xref:specifying-a-template[template], xref:specifying-source-code[source], or an
+xref:specifying-an-image[image], you can use the `-e|--env` argument to pass
+environment variables to the application container at run time:
+
+----
+$ oc new-app openshift/postgresql-92-centos7 \
+    -e POSTGRESQL_USER=user \
+    -e POSTGRESQL_DATABASE=db \
+    -e POSTGRESQL_PASSWORD=password
+----
+
+The variables can also be read from file using the `--env-file` argument:
+
+----
+$ cat postgresql.env
+POSTGRESQL_USER=user
+POSTGRESQL_DATABASE=db
+POSTGRESQL_PASSWORD=password
+$ oc new-app openshift/postgresql-92-centos7 --env-file=postgresql.env
+----
+
+Additionally, environment variables can be given on standard input by using
+`--env-file=-`:
+
+----
+$ cat postgresql.env | oc new-app openshift/postgresql-92-centos7 --env-file=-
+----
+
+See xref:../../dev_guide/environment_variables.adoc#dev-guide-environment-variables[Managing Environment Variables] for more information.
+
+[NOTE]
+====
+Any `BuildConfig` objects created as part of `new-app` processing will not be updated with
+environment variables passed via the `-e|--env` or `--env-file` argument.
+====
+
+[[specifying-build-environment-variables]]
+
+==== Specifying Build Environment Variables
+
+When generating applications from a xref:specifying-a-template[template], xref:specifying-source-code[source], or an
+xref:specifying-an-image[image], you can use the `--build-env` argument to pass
+environment variables to the build container at run time:
+
+----
+$ oc new-app openshift/ruby-23-centos7 \
+    --build-env HTTP_PROXY=http://myproxy.net:1337/ \
+    --build-env GEM_HOME=~/.gem
+----
+
+The variables can also be read from a file using the `--build-env-file` argument:
+
+----
+$ cat ruby.env
+HTTP_PROXY=http://myproxy.net:1337/
+GEM_HOME=~/.gem
+$ oc new-app openshift/ruby-23-centos7 --build-env-file=ruby.env
+----
+
+Additionally, environment variables can be given on standard input by using
+`--build-env-file=-`:
+
+----
+$ cat ruby.env | oc new-app openshift/ruby-23-centos7 --build-env-file=-
+----
+
+[[specifying-labels]]
+
+==== Specifying Labels
+
+When generating applications from xref:specifying-source-code[source],
+xref:specifying-an-image[images], or xref:specifying-a-template[templates], you
+can use the `-l|--label` argument to add labels to the created objects. Labels
+make it easy to collectively select, configure, and delete objects associated
+with the application.
+
+----
+$ oc new-app https://github.com/openshift/ruby-hello-world -l name=hello-world
+----
+
+[[output-without-creation]]
+
+==== Viewing the Output Without Creation
+To see a dry-run of what `new-app` will create, you can use the `-o|--output`
+argument with a `yaml` or `json` value. You can then use the output to preview
+the objects that will be created, or redirect it to a file that you can edit.
+Once you are satisfied, you can use `oc create` to create the {product-title}
+objects.
+
+To output `new-app` artifacts to a file, edit them, then create them:
+
+----
+$ oc new-app https://github.com/openshift/ruby-hello-world \
+    -o yaml > myapp.yaml
+$ vi myapp.yaml
+$ oc create -f myapp.yaml
+----
+
+// NB: The following sections are ordered by "tweak support";
+// first are those supported by command line options,
+// after are those possible only via new-app/edit/create.
+
+[[object-names]]
+
+==== Creating Objects With Different Names
+Objects created by `new-app` are normally named after the source repository, or
+the image used to generate them. You can set the name of the objects produced by
+adding a `--name` flag to the command:
+
+----
+$ oc new-app https://github.com/openshift/ruby-hello-world --name=myapp
+----
+
+[[object-project-or-namespace]]
+
+==== Creating Objects in a Different Project
+
+Normally, `new-app` creates objects in the current project. However, you can
+create objects in a different project by using the `-n|--namespace` argument:
+
+----
+$ oc new-app https://github.com/openshift/ruby-hello-world -n myproject
+----
+
+[[advanced-multiple-components-and-grouping]]
+
+==== Creating Multiple Objects
+
+The `new-app` command allows creating multiple applications specifying multiple
+parameters to `new-app`. Labels specified in the command line apply to all
+objects created by the single command. Environment variables apply to all
+components created from source or images.
+
+To create an application from a source repository and a Docker Hub image:
+
+----
+$ oc new-app https://github.com/openshift/ruby-hello-world mysql
+----
+
+[NOTE]
+====
+If a source code repository and a builder image are specified as separate
+arguments, `new-app` uses the builder image as the builder for the source code
+repository. If this is not the intent, specify the required builder image for
+the source using the `~` separator.
+====
+
+[[grouping-images-and-source-in-a-single-pod]]
+
+==== Grouping Images and Source in a Single Pod
+The `new-app` command allows deploying multiple images together in a single pod.
+In order to specify which images to group together, use the `+` separator. The
+`--group` command line argument can also be used to specify the images that should
+be grouped together. To group the image built from a source repository with
+other images, specify its builder image in the group:
+
+----
+$ oc new-app ruby+mysql
+----
+
+To deploy an image built from source and an external image together:
+
+----
+$ oc new-app \
+    ruby~https://github.com/openshift/ruby-hello-world \
+    mysql \
+    --group=ruby+mysql
+----
+
+[[searching-images-templates-inputs]]
+
+==== Searching for Images, Templates, and Other Inputs
+To search for images, templates, and other inputs for the `oc new-app` command, add the `--search` and `--list` flags. For example, to find all of the images or templates that include PHP:
+
+----
+$ oc new-app --search php
+----
+
+[[using-the-web-console-na]]
+
+== Creating an Application Using the Web Console
+
+. While in the desired project, click *Add to Project*:
++
+image::3.7-add-to-project-options.png[Add to Project]
+
+. Select either a builder image from the list of images in your project, or
+from the service catalog:
++
+image::3.7-landing-page.png[Browse Catalog ]
++
+[NOTE]
+====
+Only
+xref:../../architecture/core_concepts/builds_and_image_streams.adoc#image-streams[image
+stream tags] that have the *builder* tag listed in their annotations
+appear in this list, as demonstrated here:
+====
++
+----
+kind: "ImageStream"
+apiVersion: "v1"
+metadata:
+  name: "ruby"
+  creationTimestamp: null
+spec:
+  dockerImageRepository: "registry.redhat.io/openshift3/ruby-20-rhel7"
+  tags:
+    -
+      name: "2.0"
+      annotations:
+        description: "Build and run Ruby 2.0 applications"
+        iconClass: "icon-ruby"
+        tags: "builder,ruby" <1>
+        supports: "ruby:2.0,ruby"
+        version: "2.0"
+----
+<1> Including *builder* here ensures this `ImageStreamTag` appears in the
+web console as a builder.
+
+. Modify the settings in the new application screen to configure the objects
+to support your application:
++
+image::3.7-create-app-wizard-settings.gif[Configuration Wizard]

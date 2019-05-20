@@ -1,0 +1,325 @@
+[[getting-started-administrators]]
+= Administrators: Setting Up a Cluster
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+ifdef::openshift-origin[]
+toc::[]
+
+== Overview
+{product-title} has multiple installation methods available, each of which allow
+you to quickly get your own {product-title} instance up and running. Depending
+on your environment, you can choose the installation method that works best for
+you.
+
+For deploying a full {product-title} cluster, see the
+xref:../install/index.adoc#install-planning[Installing Clusters] guide.
+
+== Prerequisites
+
+Before choosing an installation method, you must first
+xref:../install/prerequisites.adoc#install-config-install-prerequisites[satisfy the prerequisites] on
+your hosts, which includes verifying system and environment requirements and
+installing and configuring the CRI-O or Docker container engines. After ensuring your hosts are properly set
+up, you can continue by choosing one of the following installation methods.
+
+Container engines and {product-title} must run on the Linux operating system. If you wish to
+run the server from a Windows or Mac OS X host, you should start a Linux VM first.
+
+[CAUTION]
+====
+{product-title} and container engines use
+xref:../admin_guide/iptables.adoc#admin-guide-iptables[iptables] to manage
+networking. Ensure that local firewall rules and other software making iptable
+changes do not alter the {product-title} and containe engine service setup.
+====
+
+ifdef::openshift-origin[]
+[[get-started-cloud-providers]]
+=== On-premise Versus Cloud Providers
+
+{product-title} can be installed on-premise or hosted on public or private
+clouds. For information, see
+xref:../install/running_install.adoc#advanced-cloud-providers[Running Installation Playbooks].
+
+Once you have your cluster nodes provisioned, choose the
+installation method that fits your case the best.
+endif::[]
+
+[[installation-methods]]
+== Installation Methods
+
+Choose one of the following installation methods that works best for you.
+
+=== Method 1: Running in a Container [[running-in-a-docker-container]]
+You can quickly get {product-title} running in a container using images
+from https://hub.docker.com[Docker Hub] on a Linux system. This method is
+supported on Fedora, CentOS, and Red Hat Enterprise Linux (RHEL) hosts only.
+
+[CAUTION]
+====
+{product-title} listens on ports 53 and 8443. If another service is
+already listening on those ports you must stop that service before launching
+the {product-title} container.
+====
+
+*Starting an All-in-One Server*
+
+. Start the server:
++
+----
+$ oc cluster up
+----
++
+This command:
++
+- starts {product-title} listening on local interface on your host (*127.0.0.1:8443*),
+- starts the web console listening on all interfaces at `/console` (*127.0.0.1:8443*),
+- launches the Kubernetes system components,
+- and provisions registry, router, initial templates, and a default project.
+
+Use the `oc cluster --help` command to get more information and view other available
+command-line options.
+
+*What's Next?*
+
+Now that you have {product-title} successfully running in your environment,
+xref:try-it-out[try it out] by walking through a sample application lifecycle.
+
+=== Method 2: Downloading the Binary [[downloading-the-binary]]
+Red Hat periodically publishes binaries to GitHub, which you can download on the
+{product-title} repository's
+https://github.com/openshift/origin/releases[Releases] page. These are Linux,
+Windows, or Mac OS X 64-bit binaries; note that the Mac and Windows versions are
+for the CLI only.
+
+The release archives for Linux and Mac OS X contain the server binary
+`openshift` which is an all-in-one {product-title} installation. The archives
+for all platforms include xref:../cli_reference/get_started_cli.adoc#cli-reference-get-started-cli[the CLI]
+(the `oc` command) and the Kubernetes client (the `kubectl` command).
+
+*Installing and Running an All-in-One Server*
+
+. Download the binary from the
+https://github.com/openshift/origin/releases[Releases] page and untar it on your
+local system.
+
+. Add the directory you untarred the release into to your path:
++
+----
+$ export PATH="$(pwd)":$PATH
+----
++
+
+. Launch the server:
++
+----
+$ sudo ./openshift start
+----
++
+This command:
++
+--
+- starts {product-title} listening on all interfaces (*0.0.0.0:8443*),
+- starts the web console listening on all interfaces at `/console` (*0.0.0.0:8443*),
+- launches an [sysitem]#etcd# server to store persistent data, and
+- launches the Kubernetes system components.
+--
++
+The server runs in the foreground until you terminate the process.
++
+NOTE: This command requires `root` access to create services due to the need to
+modify `iptables` and mount volumes.
+
+. {product-title} services are secured by TLS. In this path we generate a self-signed
+certificate on startup which must be accepted by your web browser or client.
+You must point `oc` and `curl` at the appropriate CA bundle and client key and
+certificate to connect to {product-title}. Set the following environment variables:
++
+----
+$ export KUBECONFIG="$(pwd)"/openshift.local.config/master/admin.kubeconfig
+$ export CURL_CA_BUNDLE="$(pwd)"/openshift.local.config/master/ca.crt
+$ sudo chmod +r "$(pwd)"/openshift.local.config/master/admin.kubeconfig
+----
++
+NOTE: This is just for example purposes; in a production environment, developers
+would generate their own keys and not have access to the system keys.
+
+
+*What's Next?*
+
+Now that you have {product-title} successfully running in your environment,
+xref:try-it-out[try it out] by walking through a sample application lifecycle.
+
+[[try-it-out]]
+== Try It Out
+
+After starting an {product-title} instance, you can try it out by creating an
+end-to-end application demonstrating the full {product-title} concept chain.
+
+NOTE: When running {product-title} in a VM, you will want to ensure your host
+system can access ports 8080 and 8443 inside the container for the examples
+below.
+
+
+. Log in to the server as a regular user:
++
+----
+$ oc login
+Username: test
+Password: test
+----
++
+. Create a new project to hold your application:
++
+----
+$ oc new-project test
+----
++
+. Tag an application image from a container registry into your project:
++
+----
+$ oc tag --source=docker openshift/deployment-example:v1 deployment-example:latest
+----
++
+. Deploy the application image:
++
+----
+$ oc new-app deployment-example:latest
+----
++
+Note that a service was created and given an IP - this is an address that
+can be used within the cluster to access the application.
++
+. Display a summary of the resources you created:
++
+----
+$ oc status
+----
++
+. The container image for your application will be pulled to the local system
+and started. Once it has started it can be accessed on the host. If this is your
+laptop or desktop, open a web browser to the service IP and port that was
+displayed for the application:
++
+----
+http://172.30.192.169:8080 (example)
+----
++
+If you are on a separate system and do not have direct network access to the
+host, SSH to the system and perform a `curl` command:
++
+----
+$ curl http://172.30.192.169:8080 # (example)
+----
++
+You should see the `v1` text displayed on the page.
+
+Now that your application is deployed, you can trigger a new version of that
+image to be rolled out to your host by tagging the `v2` image. The `new-app`
+command created an image stream which tracks which images you wish to use.
+Use the `tag` command to mark a new image as being desired for deployment:
+
+----
+$ oc tag --source=docker openshift/deployment-example:v2 deployment-example:latest
+----
+
+Your application's deployment config is watching `deployment-example:latest`
+and will trigger a new rolling deployment when the `latest` tag is updated
+to the value from `v2`.
+
+[NOTE]
+====
+You can also use an alternate version of the command:
+----
+$ oc tag docker.io/openshift/deployment-example:v2 deployment-example:latest
+----
+====
+
+Return to the browser or use `curl` again and you should see the `v2` text
+displayed on the page.
+
+As a developer, building new container images is as important as deploying them.
+{product-title} provides tools for running builds as well as building
+source code from within predefined builder images via the Source-to-Image
+toolchain.
+
+For this procedure, ensure that the container engine is able to pull images
+from the host system. Also, make sure you have completed the instructions about setting the
+`--insecure-registry` flag from xref:../install/host_preparation.adoc#install-config-install-host-preparation[Host preparation].
+
+
+. Switch to the administrative user and change to the `default` project:
++
+----
+$ oc login -u system:admin
+$ oc project default
+----
++
+. Set up an integrated container image registry for the {product-title} cluster:
++
+----
+$ oc adm registry
+----
++
+It will take a few minutes for the registry image to download and start; use `oc
+status` to know when the registry is started.
+
+. Change back to the `test` user and `test` project:
++
+----
+$ oc login -u test
+$ oc project test
+----
++
+. Create a new application that combines a builder image for Node.js with
+example source code to create a new deployable Node.js image:
++
+----
+$ oc new-app openshift/nodejs-010-centos7~https://github.com/sclorg/nodejs-ex.git
+----
++
+A build will be triggered automatically using the provided image and the latest
+commit to the `master` branch of the provided Git repository. To get the status
+of a build, run:
++
+----
+$ oc status
+----
++
+which will summarize the build. When the build completes, the resulting container image will be pushed to the container image registry.
+
+. Wait for the deployed image to start, then view the service IP using your
+browser or `curl`.
+
+You can see more about the commands available in
+xref:../cli_reference/basic_cli_operations.adoc#cli-reference-basic-cli-operations[the CLI] (the `oc` command)
+with:
+
+----
+$ oc help
+----
+
+Or connect to another system with:
+
+----
+$ oc -h <server_hostname_or_IP> [...]
+----
+
+{product-title} includes a web console which helps you visualize your
+applications and perform common creation and management actions. You can use the
+`test` user we created above to log in to the console via
+`https://<server>:8443/console`. For more information, see
+xref:../getting_started/developers_console.adoc#getting-started-developers-console[Getting Started for Developers:
+Web Console].
+
+You can also see the
+https://github.com/openshift/origin/blob/master/examples/sample-app[{product-title}
+3 Application Lifecycle Sample] for a more in-depth walkthrough.
+endif::[]

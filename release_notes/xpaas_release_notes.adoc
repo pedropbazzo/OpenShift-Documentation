@@ -1,0 +1,12 @@
+[[release-notes-xpaas-release-notes]]
+= xPaaS Release Notes
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+The release notes for xPaaS docs have migrated to their own book on the link:https://access.redhat.com/documentation/en/red-hat-xpaas/0/red-hat-xpaas-release-notes/[Red Hat customer portal].

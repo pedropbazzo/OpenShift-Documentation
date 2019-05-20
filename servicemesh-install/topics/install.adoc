@@ -1,0 +1,679 @@
+[[installing-service-mesh]]
+= Installing the {ProductName}
+
+Installing the {ProductShortName} involves installing the operator, and then creating and managing a custom resource definition file to deploy the control plane.
+
+[NOTE]
+====
+Starting with {ProductName} 0.9.TechPreview, Mixer’s policy enforcement is disabled by default. You must enable it to run policy tasks. See https://docs.openshift.com/container-platform/3.11/servicemesh-install/servicemesh-install.html#update-mixer-policy-enforcement[Update Mixer policy enforcement] for instructions on enabling Mixer policy enforcement.
+====
+
+[[operator-definition]]
+== What is an operator?
+An _operator_ is a piece of software that enables you to implement and automate common activities, such as installation and configuration, in your Kubernetes cluster. It acts as a controller, allowing you to set or change the desired state of objects within your cluster.
+
+[NOTE]
+====
+{ProductName} {ProductVersion} introduces a modified Operator and a significantly changed installation custom resource file. You can view https://docs.openshift.com/container-platform/3.11/servicemesh-install/servicemesh-install.html#appendix_B[examples of the custom resource file from previous releases in the appendix].
+====
+
+[[installing-operator]]
+== Installing the operator
+The {ProductShortName} installation process introduces an operator to manage the installation of the control plane within the `istio-operator` namespace. This operator defines and monitors a custom resource related to the deployment, update, and deletion of the control plane.
+
+You can find the https://github.com/Maistra/istio-operator/tree/maistra-0.10/deploy/examples[operator templates on GitHub].
+
+The following commands install the {ProductShortName} operator into an existing {product-title} installation; you can run them from any host with access to the cluster. Ensure that you are logged in as a cluster admin before executing these commands.
+
+----
+$ oc new-project istio-operator
+$ oc new-project istio-system
+$ oc apply -n istio-operator -f https://raw.githubusercontent.com/Maistra/istio-operator/maistra-0.10/deploy/servicemesh-operator.yaml
+----
+
+[NOTE]
+====
+If you are using the https://docs.openshift.com/container-platform/3.11/servicemesh-install/servicemesh-install.html#appendix_B[previous version of the custom resource defintion], apply the resource to `istio-operator` rather than `istio-system` or the install will fail.
+====
+
+[[verifying-operator-installation]]
+== Verifying operator installation
+
+To verify that the operator is installed correctly, issue the following command:
+
+----
+$ oc get pods -n istio-operator -l name=istio-operator
+----
+
+When the operator reaches a running state, it is installed correctly.
+
+----
+NAME                              READY     STATUS    RESTARTS   AGE
+istio-operator-5cd6bcf645-fvb57   1/1       Running   0          1h
+----
+
+[[creating-custom-resource]]
+== Creating a custom resource file
+
+[NOTE]
+====
+You *must* install the custom resource into the `istio-system` namespace.
+====
+
+To deploy the {ProductShortName} control plane, you must deploy a custom resource. A _custom resource_ is an object that extends the Kubernetes API, or allows you to introduce your own API into a project or a cluster. You define a custom resource as a yaml file that defines the object, and then you use the yaml file to create the object. The following example contains all of the supported parameters and deploys {ProductName} {ProductVersion} images based on Red Hat Enterprise Linux (RHEL).
+
+[IMPORTANT]
+====
+The 3scale Istio Adapter is deployed and configured in the custom resource file. It also requires a working 3scale account (https://www.3scale.net/signup/[SaaS] or https://access.redhat.com/documentation/en-us/red_hat_3scale_api_management/2.4/html/infrastructure/onpremises-installation[On-Premises]).
+====
+
+.Full example istio-installation.yaml
+
+[source,yaml]
+----
+  apiVersion: istio.openshift.com/v1alpha3
+  kind: ControlPlane
+  metadata:
+    name: basic-install
+  spec:
+    launcher:
+      enabled: false
+      # specify the url to master, e.g. https://master.some.domain.com:443
+      LAUNCHER_MISSIONCONTROL_OPENSHIFT_CONSOLE_URL:
+      # Your GitHub username
+      LAUNCHER_MISSIONCONTROL_GITHUB_USERNAME:
+      # Your GitHub Mission Control access token
+      LAUNCHER_MISSIONCONTROL_GITHUB_TOKEN:
+
+    threeScale:
+      enabled: false
+
+    istio:
+      global:
+        proxy:
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
+
+      gateways:
+        istio-egressgateway:
+          autoscaleEnabled: false
+        istio-ingressgateway:
+          autoscaleEnabled: false
+          ior_enabled: false
+
+      mixer:
+        policy:
+          autoscaleEnabled: false
+
+        telemetry:
+          autoscaleEnabled: false
+          resources:
+            requests:
+              cpu: 100m
+              memory: 1G
+            limits:
+              cpu: 500m
+              memory: 4G
+
+      pilot:
+        autoscaleEnabled: false
+        traceSampling: 100.0
+
+      kiali:
+       dashboard:
+          user: admin
+          passphrase: admin
+      tracing:
+        enabled: true
+----
+
+[[custom-resource-parameters]]
+== Custom resource parameters
+
+The following examples illustrate use of the supported custom resource parameters for {ProductName} and the tables provide additional information about supported parameters.
+
+[IMPORTANT]
+====
+The resources you configure for {ProductName} with these custom resource parameters, including CPUs, memory, and the number of pods, are based on the configuration of your OpenShift cluster. Configure these parameters based on the available resources in your current cluster configuration.
+====
+
+=== Istio global example
+
+[NOTE]
+====
+In order for the 3scale Istio Adapter to work, `disablePolicyChecks` must be `false`.
+====
+
+[source,yaml]
+----
+  istio:
+    global:
+      hub: `maistra/` or `openshift-istio-tech-preview/`
+      tag: 0.10.0
+      proxy:
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 128Mi
+      mtls: false
+      disablePolicyChecks: true
+      policyCheckFailOpen: false
+      imagePullSecrets:
+        - MyPullSecret
+----
+
+[NOTE]
+====
+See the OpenShift documentation on https://docs.openshift.com/container-platform/3.11/dev_guide/compute_resources.html#dev-compute-resources[Compute Resources] for additional details on specifying CPU and memory resources for the containers in your pod.
+====
+
+.General parameters
+|===
+|Parameter |Description |Values |Default
+
+|`disablePolicyChecks`
+|This boolean indicates whether to enable policy checks
+|`true`/`false`
+|`true`
+
+|`policyCheckFailOpen`
+|This boolean indicates whether traffic is allowed to pass through to the Envoy sidecar when the Mixer policy service cannot be reached
+|`true`/`false`
+|`false`
+
+|`tag`
+|The tag that the operator uses to pull the Istio images
+|A valid container image tag
+|`0.10.0`
+
+|`hub`
+|The hub that the operator uses to pull Istio images
+|A valid image repo
+|`maistra/` or `openshift-istio-tech-preview/`
+
+|`mTLS`
+|This controls whether to enable Mutual Transport Layer Security (mTLS) between services by default
+|`true`/`false`
+|`false`
+|===
+
+
+.Proxy parameters
+|===
+|Type |Parameter |Description |Values |Default
+
+|Resources
+|`cpu`
+|The percentage of CPU resources requested for Envoy proxy
+|CPU resources in millicores based on your environment's configuration
+|`100m`
+
+|
+|`memory`
+|The amount of memory requested for Envoy proxy
+|Available memory in bytes based on your environment's configuration
+|`128Mi`
+
+|Limits
+|`cpu`
+|The maximum percentage of CPU resources requested for Envoy proxy
+|CPU resources in millicores based on your environment's configuration
+|`2000m`
+
+|
+|`memory`
+|The maximum amount of memory Envoy proxy is permitted to use
+|Available memory in bytes based on your environment's configuration
+|`128Mi`
+
+|
+|`imagePullSecret`
+|If access to the registry providing the Istio images is secure, list an https://kubernetes.io/docs/concepts/containers/images/#specifying-imagepullsecrets-on-a-pod[imagePullSecret] here
+|{"auths":{"subdomain.example.com":{"auth":"b3BlbnNoaWZ0LXJlbGVhc2UtZGV2K2dlZWtzcGVydGlzZTFlamRidHUwdnZmM2djOXR5b3F4bzM3Nndyejo2TzhCVFkxOVdUOUJTSU1SS0FNODVRUFBQUUQ3NEZUVUUFAQyTUFKMk41T0lLUklLSE5YV01SVlRVTEZaSUs5","email":"user@example.com"},"quay.io":{"auth":"b3BlbnNoaWZ0LXJlbGVhc2UtZGV2K2dlZWtzcGVydGlzZTFlamRidHUwdnZmM2djOXR5b3F4bzM3Nndyejo2TzhCVFkxOVdUOUJTSU1SS0FNODVRUFBQUUQ3NEZVUVVXWFAyTUFKMk41T0lLUklLSE5YV01SVlRVTEZaSUs5","email":"user@example.com"},"registry.connect.redhat.com":{"auth":"NTE5MzM5Mjh8dWhjLTFFSmRiVFUwVnZmM0djOVR5T3FYTzM3NndyejpleUpoYkdjaU9pSlNVelV4TWlKOS5leUp6ZFdJaU9pSTBOMk13TWpjek1EVmpORFEwTW1GaU9EY3dOalJrWmpFME9EYzNaakJtWmlKOS5HaG54eFpHbHF5cmZIUzEtdEpyZVVHQTN0bzhNa2ZFMVdmX2Q4ZHZoa1ZvQlR0R3NheUNUS2RpQmpqZHF2VFVhZ0FzcWtWMFVNZHp3SW1nSTMwRjR0QzFJSzdXU1I1MF9CQzlfS3ExWDRZbzZIaktWTWFFc29KMHFzQU1IN3lYamUzSXdpRV8yLVh1dUJ4Z2VHVzdDV21sYVlNLWVSaGxEOHFUUzE2LVhRY0dQYW1YWjdWbUJib2lCdENCZmQyaktmZ2pSN1ZOTV9sLUh0YXVORURRYWg3VmQzdUZqT3ZmOHFGT1dTeVBrakxoNWE4ZVU5NXJLVHMxaWp6TkJuZV90R2U4WkVfQUxVb2V0SGhfV1M5SE1aeGtnT01FM0FNMFZ2Ml9GX2szc0RiUmt6U1VxLVJ0ZTE2OTJGQmJKY2x6NTUxbXpnRGtJa2lpdzh5X0ViT2E4Z0N2YjNEVU1uZi1RZ2dMVkRSMW5QdWZTSVJ3QTBzTTJZOVFUVTNGTnZCc0o0NmNVRU5uTDRsb1Z1WmhwOWhFVTFTV2NXd0UtZm40ZGVfNVJwN0FwNTJqQnphWTg4OWdFRWtWdXllZmpRX0RPTURGNDd1VDN1SnJ5MDBFVmIzRm40QlRaTVVWTG5iU3I1bkFYU204RU1qMzFOVnZQSzRsS3d5d29WRzZZaEdQX2ZXc1dUcGFHSGVoTkxYMnF2aGJDTy1hYnAyUXRweHo3aHFnY3RuNmpXSVZzWmQtMGhYS3NnX2ppZllfZ18tLW10b3oydHVoU0VBY2xRLU81NEdEQjhfb1RkajlwQWQ2NWY2dWxQaDV4N1IwQXpaZjZCdWtfY1ZRNkh3LXBpT3FlOWpWYlljNS0xVU9peGo4ejRWcXoyN1lTUHBhNGw2ejVsdUt6clNpZnVpUQ==","email":"user@example.com"},"something.example.io":{"auth":"NTE5MzM5Mjh8dWhjLTFFSmRiVFUwVnZmM0djOVR5T3FYTzM3NndyejpleUpoYkdjaU9pSlNVelV4TWlKOS5leUp6ZFdJaU9pSTBOMk13TWpjek1EVmpORFEwTW1GaU9EY3dOalJrPmwFME9EYzNaakJtWmlKOS5HaG54eFpHbHF5cmZIUzEtdEpyZVVHQTN0bzhNa2ZFMVdmX2Q4ZHZoa1ZvQlR0R3NheUNUS2RpQmpqZHF2VFVhZ0FzcWtWMFVNZHp3SW1nSTMwRjR0QzFJSzdXU1I1MF9CQzlfS3ExWDRZbzZIaktWTWFFc29KMHFzQU1IN3lYamUzSXdpRV8yLVh1dUJ4Z2VHVzdDV21sYVlNLWVSaGxEOHFUUzE2LVhRY0dQYW1YWjdWbUJib2lCdENCZmQyaktmZ2pSN1ZOTV9sLUh0YXVORURRYWg3VmQzdUZqT3ZmOHFGT1dTeVBrakxoNWE4ZVU5NXJLVHMxaWp6TkJuZV90R2U4WkVfQUxVb2V0SGhfV1M5SE1aeGtnT01FM0FNMFZ2Ml9GX2szc0RiUmt6U1VxLVJ0ZTE2OTJGQmJKY2x6NTUxbXpnRGtJa2lpdzh5X0ViT2E4Z0N2YjNEVU1uZi1RZ2dMVkRSMW5QdWZTSVJ3QTBzTTJZOVFUVTNGTnZCc0o0NmNVRU5uTDRsb1Z1WmhwOWhFVTFTV2NXd0UtZm40ZGVfNVJwN0FwNTJqQnphWTg4OWdFRWtWdXllZmpRX0RPTURGNDd1VDN1SnJ5MDBFVmIzRm40QlRaTVVWTG5iU3I1bkFYU204RU1qMzFOVnZQSzRsS3d5d29WRzZZaEdQX2ZXc1dUcGFHSGVoTkxYMnF2aGJDTy1hYnAyUXRweHo3aHFnY3RuNmpXSVZzWmQtMGhYS3NnX2ppZllfZ18tLW10b3oydHVoU0VBY2xRLU81NEdEQjhfb1RkajlwQWQ2NWY2dWxQaDV4N1IwQXpaZjZCdWtfY1ZRNkh3LXBpT3FlOWpWYlljNS0xVU9peGo4ejRWcXoyN1lTUHBhNGw2ejVsdUt6clNpZnVpUQ==","email":"user@example.com"}}}
+|None
+|===
+
+
+=== Istio gateway example
+
+[source,yaml]
+----
+  gateways:
+       istio-egressgateway:
+         autoscaleEnabled: false
+         autoscaleMin: 1
+         autoscaleMax: 5
+       istio-ingressgateway:
+         autoscaleEnabled: false
+         autoscaleMin: 1
+         autoscaleMax: 5
+         ior_enabled: false
+----
+
+
+.Istio Gateway parameters
+|===
+|Type |Parameter |Description |Values |Default
+
+|`istio-egressgateway`
+|`autoscaleEnabled`
+|This parameter enables autoscaling.
+|`true`/`false`
+|`true`
+
+|
+|`autoscaleMin`
+|The minimum number of pods to deploy for the egress gateway based on the autoscaleEnabled setting
+|A valid number of allocatable pods based on your environment's configuration
+|`1`
+
+|
+|`autoscaleMax`
+|The maximum number of pods to deploy for the egress gateway based on the autoscaleEnabled setting
+|A valid number of allocatable pods based on your environment's configuration
+|`5`
+
+|`istio-ingressgateway`
+|`autoscaleEnabled`
+|This parameter enables autoscaling.
+|`true`/`false`
+|`true`
+
+|
+|`autoscaleMin`
+|The minimum number of pods to deploy for the ingress gateway based on the autoscaleEnabled setting
+|A valid number of allocatable pods based on your environment's configuration
+|`1`
+
+|
+|`autoscaleMax`
+|The maximum number of pods to deploy for the ingress gateway based on the autoscaleEnabled setting
+|A valid number of allocatable pods based on your environment's configuration
+|`5`
+
+|
+|`ior_enabled`
+|This parameter controls whether Istio routes are automatically configured in OpenShift
+|`true`/`false`
+|`true`
+|===
+
+
+=== Istio Mixer example
+
+[source,yaml]
+----
+  mixer:
+    enabled: true
+       policy:
+         autoscaleEnabled: false
+
+       telemetry:
+         autoscaleEnabled: false
+         resources:
+           requests:
+             cpu: 100m
+             memory: 1G
+           limits:
+             cpu: 500m
+             memory: 4G
+----
+
+
+.Istio Mixer policy parameters
+|===
+|Parameter |Description |Values |Default
+
+|`enabled`
+|This enables Mixer
+|`true`/`false`
+|`true`
+
+|`autoscaleEnabled`
+|This controls whether to enable autoscaling. Disable this for small environments.
+|`true`/`false`
+|`true`
+
+|`autoscaleMin`
+|The minimum number of pods to deploy based on the autoscaleEnabled setting
+|A valid number of allocatable pods based on your environment's configuration
+|`1`
+
+|`autoscaleMax`
+|The maximum number of pods to deploy based on the autoscaleEnabled setting
+|A valid number of allocatable pods based on your environment's configuration
+|`5`
+|===
+
+
+.Istio Mixer telemetry parameters
+|===
+|Type |Parameter |Description |Values |Default
+
+|Resources
+|`cpu`
+|The percentage of CPU resources requested for Mixer telemetry
+|CPU resources in millicores based on your environment's configuration
+|`1000m`
+
+|
+|`memory`
+|The amount of memory requested for Mixer telemetry
+|Available memory in bytes based on your environment's configuration
+|`1G`
+
+|Limits
+|`cpu`
+|The maximum percentage of CPU resources Mixer telemetry is permitted to use
+|CPU resources in millicores based on your environment's configuration
+|`4800m`
+
+|
+|`memory`
+|The maximum amount of memory Mixer telemetry is permitted to use
+|Available memory in bytes based on your environment's configuration
+|`4G`
+|===
+
+
+=== Istio Pilot example
+
+[source,yaml]
+----
+  pilot:
+    resources:
+      requests:
+        cpu: 100m
+     autoscaleEnabled: false
+     traceSampling: 100.0
+----
+
+.Istio Pilot parameters
+|===
+|Parameter |Description |Values |Default
+
+|`cpu`
+|The percentage of CPU resources requested for Pilot
+|CPU resources in millicores based on your environment's configuration
+|`500m`
+
+|`memory`
+|The amount of memory requested for Pilot
+|Available memory in bytes based on your environment's configuration
+|`2048Mi`
+
+|`traceSampling`
+|This value controls how often random sampling occurs. Note: increase for development or testing.
+|A valid number
+|`1.0`
+|===
+
+=== Tracing
+
+.Tracing parameters
+|===
+|Parameter |Description |Value |Default
+
+|`enabled`
+|This enables tracing in the environment
+|`true`/`false`
+|`true`
+|===
+
+=== Kiali example
+
+[NOTE]
+====
+Kiali supports Oath authentication and dashboard users. By default, Kiali uses OpenShift Oauth, but you can enable a dashboard user by adding a dashboard user and passphrase.
+====
+
+[source,yaml]
+----
+  kiali:
+     enabled: true
+     hub: kiali/
+     tag: v0.16.2
+     dashboard:
+       user: admin
+       passphrase: admin
+----
+
+.Kiali parameters
+|===
+|Parameter |Description |Values |Default
+
+|`enabled`
+|This enables or disables Kiali in {ProductShortName}. Kiali is installed by default. If you do not want to install Kiali, change the `enabled` value to `false`.
+|`true`/`false`
+|`true`
+
+|`hub`
+|The hub that the operator uses to pull Kiali images
+|A valid image repo
+|`kiali/` or `openshift-istio-tech-preview/`
+
+|`tag`
+|The tag that the operator uses to pull the Istio images
+|A valid container image tag
+|`0.16.2`
+
+|`user`
+|The username to access the Kiali console. Note: This is not related to any OpenShift account.
+|A valid Kiali dashboard username
+|None
+
+|`passphrase`
+|The password used to access the Kiali console. Note: This is not related to any OpenShift account.
+|A valid Kiali dashboard passphrase
+|None
+|===
+
+=== Launcher example
+
+[source,yaml]
+----
+launcher:
+  enabled: true
+  LAUNCHER_MISSIONCONTROL_GITHUB_USERNAME: username
+  LAUNCHER_MISSIONCONTROL_GITHUB_TOKEN: token
+  LAUNCHER_MISSIONCONTROL_OPENSHIFT_API_URL: https://kubernetes.default.svc.cluster.local
+  LAUNCHER_MISSIONCONTROL_OPENSHIFT_CONSOLE_URL: ''
+  LAUNCHER_KEYCLOAK_URL: ''
+  LAUNCHER_KEYCLOAK_REALM: ''
+  LAUNCHER_TRACKER_SEGMENT_TOKEN: token
+  LAUNCHER_BOOSTER_CATALOG_REPOSITORY: https://github.com/fabric8-launcher/launcher-booster-catalog.git
+  LAUNCHER_BOOSTER_CATALOG_REF: v85
+  LAUNCHER_BACKEND_CATALOG_FILTER: booster.mission.metadata.istio
+  LAUNCHER_BACKEND_CATALOG_REINDEX_TOKEN: token
+  LAUNCHER_BACKEND_ENVIRONMENT: environment
+----
+
+.Launcher parameters
+|===
+|Parameter |Description |Default
+
+|`LAUNCHER_MISSIONCONTROL_GITHUB_USERNAME`
+|The https://help.github.com/articles/signing-up-for-a-new-github-account/[GitHub account] you want to use to run the Fabric8 launcher
+|None
+
+|`LAUNCHER_MISSIONCONTROL_GITHUB_TOKEN`
+|The https://github.com/settings/tokens[GitHub personal access token] you want to use to run the Fabric8 launcher
+|None
+
+|`LAUNCHER_MISSIONCONTROL_OPENSHIFT_API_URL`
+|The base URL of the OpenShift API where the launched boosters are created
+|https://kubernetes.default.svc.cluster.local - This does not need to be set when targing the same OpenShift instance on which you are running {ProductShortName}.
+
+|`LAUNCHER_MISSIONCONTROL_OPENSHIFT_CONSOLE_URL`
+|The base URL of the OpenShift console where the launched boosters are created
+|Empty - This does not need to be set when targeting the same OpenShift instance on which you are running {ProductShortName}.
+
+|`LAUNCHER_KEYCLOAK_URL`
+|The URL (with the /auth part) of a keycloak installation to perform SSO authentication
+|Empty - Leave empty if you have specified GitHub or OpenShift authentication
+
+|`LAUNCHER_KEYCLOAK_REALM`
+|The keycloak realm
+|Empty - Leave empty if you have specified GitHub or OpenShift authentication
+
+|`LAUNCHER_TRACKER_SEGMENT_TOKEN`
+|The token for segment tracking. Note: Leaving this empty disables tracking. Set to the correct tokens for staging and production.
+|None
+
+|`LAUNCHER_BOOSTER_CATALOG_REPOSITORY`
+|The GitHub repository containing the booster catalog
+|https://github.com/fabric8-launcher/launcher-booster-catalog.git
+
+|`LAUNCHER_BOOSTER_CATALOG_REF`
+|The GitHub branch containing the booster catalog
+|`v85`
+
+|`LAUNCHER_BOOSTER_CATALOG_FILTER`
+|The Red Hat booster catalog filter
+|booster.mission.metadata.istio
+
+|`LAUNCHER_BACKEND_CATALOG_REINDEX_TOKEN`
+|A token that must be passed to the catalog reindex service to trigger the catalog
+|Empty
+
+|`LAUNCHER_BACKEND_ENVIRONMENT`
+|The environment where this backend is running.
+|Empty - Leaving this empty will set the value to `development` if the `Catalog Git Reference` is set to `master` otherwise it will default to `production`
+|===
+
+=== 3scale example
+
+[source,yaml]
+----
+  threescale:
+      enabled: true
+      PARAM_THREESCALE_LISTEN_ADDR: 3333
+      PARAM_THREESCALE_LOG_LEVEL: info
+      PARAM_THREESCALE_LOG_JSON: true
+      PARAM_THREESCALE_REPORT_METRICS: true
+      PARAM_THREESCALE_METRICS_PORT: 8080
+      PARAM_THREESCALE_CACHE_TTL_SECONDS: 300
+      PARAM_THREESCALE_CACHE_REFRESH_SECONDS: 180
+      PARAM_THREESCALE_CACHE_ENTRIES_MAX: 1000
+      PARAM_THREESCALE_CACHE_REFRESH_RETRIES: 1
+      PARAM_THREESCALE_ALLOW_INSECURE_CONN: false
+      PARAM_THREESCALE_CLIENT_TIMEOUT_SECONDS: 10
+----
+
+.3scale parameters
+|===
+|Parameter |Description |Values |Default
+
+|`enabled`
+|Whether to use the 3scale adapter
+|`true`/`false`
+|`false`
+
+|`PARAM_THREESCALE_LISTEN_ADDR`
+|Sets the listen address for the gRPC server
+|Valid port number
+|`3333`
+
+|`PARAM_THREESCALE_LOG_LEVEL`
+|Sets the minimum log output level.
+|`debug`, `info`, `warn`, `error`, or `none`
+|`info`
+
+|`PARAM_THREESCALE_LOG_JSON`
+|Controls whether the log is formatted as JSON
+|`true`/`false`
+|`true`
+
+|`PARAM_THREESCALE_REPORT_METRICS`
+|Controls whether 3scale system and backend metrics are collected and reported to Prometheus
+|`true`/`false`
+|`true`
+
+|`PARAM_THREESCALE_METRICS_PORT`
+|Sets the port that the 3scale `/metrics` endpoint can be scrapped from
+|Valid port number
+|`8080`
+
+|`PARAM_THREESCALE_CACHE_TTL_SECONDS`
+|Time period, in seconds, to wait before purging expired items from the cache
+|Time period in seconds
+|`300`
+
+|`PARAM_THREESCALE_CACHE_REFRESH_SECONDS`
+|Time period before expiry when cache elements are attempted to be refreshed
+|Time period in seconds
+|`180`
+
+|`PARAM_THREESCALE_CACHE_ENTRIES_MAX`
+|Max number of items that can be stored in the cache at any time. Set to `0` to disable caching
+|Valid number
+|`1000`
+
+|`PARAM_THREESCALE_CACHE_REFRESH_RETRIES`
+|The number of times unreachable hosts are retried during a cache update loop
+|Valid number
+|`1`
+
+|`PARAM_THREESCALE_ALLOW_INSECURE_CONN`
+|Allow to skip certificate verification when calling `3scale` APIs. Enabling this is not recommended.
+|`true`/`false`
+|`false`
+
+|`PARAM_THREESCALE_CLIENT_TIMEOUT_SECONDS`
+|Sets the number of seconds to wait before terminating requests to 3scale System and Backend
+|Time period in seconds
+|`10`
+|===
+
+
+[[update-mixer-policy-enforcement]]
+== Update Mixer policy enforcement
+In previous versions of {ProductName}, Mixer’s policy enforcement was enabled by default. Mixer policy enforcement is now disabled by default. You must enable it before running policy tasks.
+
+To check the current Mixer policy enforcement status, run the following command:
+
+----
+$ oc get cm -n istio-system istio -o jsonpath='{.data.mesh}' | grep disablePolicyChecks
+----
+
+If `disablePolicyChecks: true`, follow these steps to enable policy enforcement in Mixer:
+
+. Edit the {ProductShortName} ConfigMap:
++
+
+----
+$ oc edit cm -n istio-system istio
+----
+
++
+. Locate `disablePolicyChecks: true` within the ConfigMap and change the value to `false`.
+
+. Save the configuration and exit the editor.
+
+. Re-check the Mixer policy enforcement status to ensure it is set to `false`.
+
+
+[[deploying-control-plane]]
+== Deploying the control plane
+
+Use the custom resource definition file you created to deploy the {ProductShortName} control plane. To deploy the control plane, run the following command:
+
+----
+$ oc create -n istio-system -f istio-installation.yaml
+----
+
+The operator creates the `istio-system` namespace and runs the installer job; this job installs and configures the control plane. You can follow the progress of the installation by watching the pods.
+
+To watch the progress of the pods, run the following command:
+
+----
+$ oc get pods -n istio-system -w
+----

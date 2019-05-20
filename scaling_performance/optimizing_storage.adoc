@@ -1,0 +1,424 @@
+include::_snippets/glusterfs.adoc[]
+[[scaling-performance-optimizing-storage]]
+= Optimizing persistent storage
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+toc::[]
+
+[NOTE]
+====
+This guide primarily focuses on optimizing persistent storage. Local ephemeral
+storage for data utilized during the lifetime of pods has fewer options.
+Ephemeral storage is only available if you enabled the ephemeral storage
+technology preview. This feature is disabled by
+default. See xref:../install_config/configuring_ephemeral.adoc#install-config-configuring-ephemeral-storage[configuring for
+ephemeral storage] for more information.
+====
+
+Optimizing storage helps to minimize storage use across all resources. By
+optimizing storage, administrators help ensure that existing storage resources
+are working in an efficient manner.
+
+[[general-storage-guidelines]]
+== General storage guidelines
+
+The following table lists the available persistent storage technologies for {product-title}.
+
+.Available storage options
+[cols="1,4,3",options="header"]
+|===
+| Storage type | Description | Examples
+
+|Block
+a|* Presented to the operating system (OS) as a block device
+* Suitable for applications that need full control of storage and operate at a low level on files
+bypassing the file system
+* Also referred to as a Storage Area Network (SAN)
+* Non-shareable, which means that only one client at a time can mount an endpoint of this type
+| {gluster-native}/{gluster-external} GlusterFS footnoteref:[dynamicPV,{gluster-native}/{gluster-external} GlusterFS, Ceph RBD, OpenStack Cinder, AWS EBS, Azure Disk, GCE persistent disk, and VMware vSphere support dynamic persistent volume (PV) provisioning natively in {product-title}.]  iSCSI, Fibre Channel, Ceph RBD, OpenStack Cinder, AWS EBS footnoteref:[dynamicPV], Dell/EMC Scale.IO, VMware vSphere Volume, GCE Persistent Disk footnoteref:[dynamicPV], Azure Disk
+
+|File
+a| * Presented to the OS as a file system export to be mounted
+* Also referred to as Network Attached Storage (NAS)
+* Concurrency, latency, file locking mechanisms, and other capabilities vary widely between protocols, implementations, vendors, and scales.
+| {gluster-native}/{gluster-external} GlusterFS footnoteref:[dynamicPV], RHEL NFS, NetApp NFS footnoteref:[netappnfs,NetApp NFS supports dynamic PV provisioning when using the Trident plugin.] , Azure File, Vendor NFS, Vendor GlusterFS footnoteref:[glusterfs, Vendor GlusterFS, Vendor S3, and Vendor Swift supportability and configurability may vary.], Azure File, AWS EFS
+
+| Object
+a| * Accessible through a REST API endpoint
+* Configurable for use in the {product-title} Registry
+* Applications must build their drivers into the application and/or container.
+| {gluster-native}/{gluster-external} GlusterFS footnoteref:[dynamicPV], Ceph Object Storage (RADOS Gateway), OpenStack Swift, Aliyun OSS, AWS S3, Google Cloud Storage, Azure Blob Storage, Vendor S3 footnoteref:[glusterfs], Vendor Swift footnoteref:[glusterfs]
+|===
+
+You can use {gluster-native} GlusterFS (a hyperconverged or cluster-hosted
+storage solution) or {gluster-external} GlusterFS (an externally hosted storage
+solution) for block, file, and object storage for {product-title} registry,
+logging, and metrics.
+
+[[back-end-recommendations]]
+== Storage recommendations
+
+The following table summarizes the recommended and configurable storage technologies for the given {product-title} cluster application.
+
+.Recommended and configurable storage technology
+[options="header"]
+|===
+|Storage type |ROX footnoteref:[rox,ReadOnlyMany]|RWX footnoteref:[rwx,ReadWriteMany] |Registry|Scaled registry|Metrics|Logging|Apps
+
+| Block
+| Yes footnoteref:[disk,This does not apply to physical disk, VM physical disk, VMDK, loopback over NFS, AWS EBS, and Azure Disk.]
+| No
+| Configurable
+| Not configurable
+| Recommended
+| Recommended
+| Recommended
+
+| File
+| Yes footnoteref:[disk]
+| Yes
+| Configurable
+| Configurable
+| Configurable footnoteref:[metrics-warning,For metrics, it is an anti-pattern to use any shared storage and a single volume
+(RWX). By default, metrics deploys with one volume per Cassandra Replica.]
+| Configurable footnoteref:[logging-warning,For logging, using any shared
+storage would be an anti-pattern. One volume per logging-es is required.]
+| Recommended
+
+| Object
+| Yes
+| Yes
+| Recommended
+| Recommended
+| Not configurable
+| Not configurable
+| Not configurable footnoteref:[object,Object storage is not consumed through {product-title}'s PVs/persistent volume claims (PVCs). Apps must integrate with the object storage REST API. ]
+|===
+
+[NOTE]
+====
+A scaled registry is an {product-title} registry where three or more pod replicas are running.
+====
+
+[[application-storage-recommendations]]
+=== Specific application storage recommendations
+
+[IMPORTANT]
+====
+Testing shows issues with using the RHEL NFS server as storage backend for
+the container image registry. This includes the OpenShift Container Registry and Quay, Cassandra
+for metrics storage, and ElasticSearch for logging storage. Therefore, using the RHEL NFS server 
+to back PVs used by core services is not recommended.
+
+Other NFS implementations on the marketplace might not have these issues.
+Contact the individual NFS implementation vendor for more information on any
+testing that was possibly completed against these OpenShift core components.
+====
+
+[[registry]]
+==== Registry
+
+In a non-scaled/high-availability (HA) {product-title} registry cluster deployment:
+
+* The preferred storage technology is object storage followed by block storage. The
+storage technology does not need to support RWX access mode.
+* The storage technology must ensure read-after-write consistency. All NAS storage (excluding {gluster-native}/{gluster-external} GlusterFS as it uses an object storage interface) are not
+recommended for {product-title} Registry cluster deployment with production workloads.
+* While `hostPath` volumes are configurable for a non-scaled/HA {product-title} Registry, they are not recommended for cluster deployment.
+
+[[scaled-registry]]
+==== Scaled registry
+
+In a scaled/HA {product-title} registry cluster deployment:
+
+* The preferred storage technology is object storage. The storage technology must support RWX access mode and must ensure read-after-write consistency.
+* File storage and block storage are not recommended for a scaled/HA {product-title} registry cluster deployment with production workloads.
+* All NAS storage (excluding {gluster-native}/{gluster-external} GlusterFS as it uses an object storage interface) are
+not recommended for {product-title} Registry cluster deployment with production workloads.
+
+[[metrics]]
+==== Metrics
+
+In an {product-title} hosted metrics cluster deployment:
+
+* The preferred storage technology is block storage.
+* It is not recommended to use NAS storage (excluding {gluster-native}/{gluster-external} GlusterFS as it uses a block storage interface from iSCSI) for a hosted metrics cluster deployment with production workloads.
+
+[IMPORTANT]
+====
+Testing shows issues with using the NFS server on RHEL as storage backend for
+the container image registry. This includes the Cassandra for metrics storage.
+Therefore, using NFS to back PVs used by core services is not recommended.
+
+Other NFS implementations on the marketplace might not have these issues.
+Contact the individual NFS implementation vendor for more information on any
+testing that was possibly completed against these OpenShift core components.
+====
+
+[[logging]]
+==== Logging
+
+In an {product-title} hosted logging cluster deployment:
+
+* The preferred storage technology is block storage.
+* It is not recommended to use NAS storage (excluding {gluster-native}/{gluster-external} GlusterFS as it uses a block storage interface from iSCSI) for a hosted metrics cluster deployment with production workloads.
+
+[IMPORTANT]
+====
+Testing shows issues with using the NFS server on RHEL as storage backend for
+the container image registry. This includes ElasticSearch for logging storage.
+Therefore, using NFS to back PVs used by core services is not recommended.
+
+Other NFS implementations on the marketplace might not have these issues.
+Contact the individual NFS implementation vendor for more information on any
+testing that was possibly completed against these OpenShift core components.
+====
+
+[[applications]]
+==== Applications
+
+Application use cases vary from application to application, as described in the following examples:
+
+* Storage technologies that support dynamic PV provisioning have low mount time latencies, and are not tied
+to nodes to support a healthy cluster.
+* Application developers are responsible for knowing and understanding the storage
+requirements for their application, and how it works with the provided storage
+to ensure that issues do not occur when an application scales or interacts
+with the storage layer.
+
+[[other-storage-recommendations]]
+=== Other specific application storage recommendations
+
+* {product-title} Internal *etcd*: For the best etcd reliability, the lowest consistent latency storage technology is preferable.
+* OpenStack Cinder: OpenStack Cinder tends to be adept in ROX access mode use cases.
+* Databases: Databases (RDBMSs, NoSQL DBs, etc.) tend to perform best with dedicated block storage.
+
+[[choosing-a-graph-driver]]
+== Choosing a graph driver
+
+Container runtimes store images and containers in a graph driver (a pluggable
+storage technology), such as DeviceMapper and OverlayFS. Each has advantages
+and disadvantages.
+
+For more information about OverlayFS, including supportability and usage caveats, see the
+link:https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/?version=7[Red Hat Enterprise Linux (RHEL) 7 Release Notes] for your version.
+
+.Graph driver comparisons
+|===
+|Name |Description |Benefits |Limitations
+
+a|OverlayFS
+
+* overlay
+* overlay2
+|Combines a lower (parent) and upper (child) filesystem and a working directory
+(on the same filesystem as the child). The lower filesystem is the base image,
+and when you create new containers, a new upper filesystem is created
+containing the deltas.
+a|* Faster than Device Mapper at starting and stopping containers. The startup time
+difference between Device Mapper and Overlay is generally less than one second.
+* Allows for page cache sharing.
+|Not POSIX compliant.
+
+|Device Mapper Thin Provisioning
+|Uses LVM, Device Mapper, and the dm-thinp kernel module. It differs by removing
+the loopback device, talking straight to a raw partition (no filesystem).
+a|* There are measurable performance advantages at moderate load and high density.
+* It gives you per-container limits for capacity (10G by default).
+a|* You have to have a dedicated partition for it.
+* It is not set up by default in Red Hat Enterprise Linux (RHEL).
+* All containers and images share the same pool of capacity. It cannot be resized
+without destroying and re-creating the pool.
+
+|Device Mapper loop-lvm
+|Uses the Device Mapper thin provisioning module (dm-thin-pool) to implement
+copy-on-write (CoW) snapshots. For each device mapper graph location, thin pool
+is created based on two block devices, one for data and one for metadata. By
+default, these block devices are created automatically by using loopback mounts
+of automatically created sparse files.
+|It works out of the box, so it is useful for prototyping and development purposes.
+a|* Not all Portable Operating System Interface for Unix (POSIX) features work (for
+example, `O_DIRECT`). Most importantly, this mode is unsupported for production
+workloads.
+* All containers and images share the same pool of capacity. It cannot be resized
+without destroying and re-creating the pool.
+
+|===
+
+For better performance, Red Hat strongly recommends using the xref:benefits-of-using-the-overlay-graph-driver[overlayFS storage driver] over Device Mapper.
+However, if you are already using Device Mapper in a production environment, Red Hat strongly recommends using thin provisioning for container images and container root file systems.
+Otherwise, always use overlayfs2 for Docker engine or overlayFS for CRI-O.
+
+Using a loop device can affect performance issues. While you can still continue to use it, the following warning message is logged:
+
+----
+devmapper: Usage of loopback devices is strongly discouraged for production use.
+Please use `--storage-opt dm.thinpooldev` or use `man docker` to refer to
+dm.thinpooldev section.
+----
+
+To ease storage configuration, use the `docker-storage-setup` utility, which automates much of the configuration details:
+
+. Edit the the *_/etc/sysconfig/docker-storage-setup_* file to specify the device driver:
++
+----
+STORAGE_DRIVER=devicemapper
+----
++
+Or
++
+----
+STORAGE_DRIVER=overlay2
+----
++
+[NOTE]
+====
+If using CRI-O specify `STORAGE_DRIVER=overlay`.
+
+With CRI-O, the default `overlay` storage driver uses the `overlay2` optimizations.
+====
++
+. If you had a separate disk drive dedicated to Docker storage (for example,
+*_/dev/xvdb_*), add the following to the *_/etc/sysconfig/docker-storage-setup_*
+file:
++
+----
+DEVS=/dev/xvdb
+VG=docker_vg
+----
+
+. Restart the `docker-storage-setup` service:
++
+----
+# systemctl restart docker-storage-setup
+----
++
+After the restart, `docker-storage-setup` sets up a volume group named
+`docker_vg` and creates a thin-pool logical volume. Documentation for thin
+provisioning on RHEL is available in the
+link:https://access.redhat.com/documentation/en-US/Red_Hat_Enterprise_Linux/7/html-single/Logical_Volume_Manager_Administration/index.html[LVM
+Administrator Guide]. View the newly created volumes with the `lsblk` command:
++
+----
+# lsblk /dev/xvdb
+NAME MAJ:MIN RM SIZE RO TYPE MOUNTPOINT
+xvdb 202:16 0 20G 0 disk
+└─xvdb1 202:17 0 10G 0 part
+  ├─docker_vg-docker--pool_tmeta 253:0 0 12M 0 lvm
+  │ └─docker_vg-docker--pool 253:2 0 6.9G 0 lvm
+  └─docker_vg-docker--pool_tdata 253:1 0 6.9G 0 lvm
+  └─docker_vg-docker--pool 253:2 0 6.9G 0 lvm
+----
++
+[NOTE]
+====
+Thin-provisioned volumes are not mounted and have no file system (individual
+containers do have an XFS file system), thus they do not show up in `df` output.
+====
+
+. To verify that Docker is using an LVM thin pool, and to monitor disk space
+use, run the `docker info` command:
++
+----
+# docker info | egrep -i 'storage|pool|space|filesystem'
+Storage Driver: overlay2 <1>
+ Backing Filesystem: extfs
+----
+<1> The `docker info` output when using `overlay2`.
++
+----
+# docker info | egrep -i 'storage|pool|space|filesystem'
+Storage Driver: devicemapper <1>
+ Pool Name: docker_vg-docker--pool <2>
+ Pool Blocksize: 524.3 kB
+ Backing Filesystem: xfs
+ Data Space Used: 62.39 MB
+ Data Space Total: 6.434 GB
+ Data Space Available: 6.372 GB
+ Metadata Space Used: 40.96 kB
+ Metadata Space Total: 16.78 MB
+ Metadata Space Available: 16.74 MB
+----
+<1> The `docker info` output when using `devicemapper`.
+<2> Corresponds to the `VG` you specified in *_/etc/sysconfig/docker-storage-setup_*.
+
+By default, a thin pool is configured to use 40% of the underlying block device.
+As you use the storage, LVM automatically extends the thin pool up to 100%. This
+is why the `Data Space Total` value does not match the full size of the
+underlying LVM device. This auto-extend technique was used to unify the storage
+approach taken in both Red Hat Enterprise Linux and Red Hat Atomic Host, which
+only uses a single partition.
+
+In development, Docker in Red Hat distributions defaults to a
+loopback mounted sparse file. To see if your system is using the loopback mode:
+
+----
+# docker info|grep loop0
+ Data file: /dev/loop0
+----
+
+[IMPORTANT]
+====
+Red Hat strongly recommends using the xref:benefits-of-using-the-overlay-graph-driver[overlay2 storage driver] in thin-pool mode for production workloads.
+====
+
+OverlayFS is also supported for container runtimes use cases as of Red Hat Enterprise Linux
+7.2, and provides faster start up time and page cache sharing, which can
+potentially improve density by reducing overall memory utilization.
+
+[[comparing-overlay-graph-drivers]]
+=== Benefits of using overlayFS or DeviceMapper with SELinux
+
+The main advantage of the OverlayFS graph is Linux page cache sharing among
+containers that share an image on the same node. This attribute of OverlayFS leads to
+reduced input/output (I/O) during container startup (and, thus, faster container
+startup time by several hundred milliseconds), as well as reduced memory usage
+when similar images are running on a node. Both of these results are beneficial
+in many environments, especially those with the goal of optimizing for density
+and have high container churn rate (such as a build farm), or those that have
+significant overlap in image content.
+
+Page cache sharing is not possible with DeviceMapper because thin-provisioned
+devices are allocated on a per-container basis.
+
+[NOTE]
+====
+DeviceMapper is the default Docker storage configuration on Red Hat Enterprise Linux.
+The use of OverlayFS as the container storage
+technology is under evaluation and moving Red Hat Enterprise Linux to OverlayFS as
+the default in future releases is under consideration.
+====
+
+[[benefits-of-using-the-overlay-graph-driver]]
+=== Comparing the overlay and overlay2 graph drivers
+
+OverlayFS is a type of union file system. It allows you to overlay one file system on top of another.
+Changes are recorded in the upper file system, while the lower file system remains unmodified.
+This allows multiple users to share a file-system image, such as a container or a DVD-ROM, where the base image is on read-only media.
+
+OverlayFS layers two directories on a single Linux host and presents them as a single directory. These directories are called layers, and the unification process is referred to as a union mount.
+
+OverlayFS uses one of two graph drivers, *overlay* or *overlay2*. As of Red Hat Enterprise
+Linux 7.2, *overlay*
+link:https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/7.2_release_notes/technology-preview-file_systems[became a supported graph driver].
+As of Red Hat Enterprise Linux 7.4, *overlay2* link:https://access.redhat.com/solutions/2908851[became supported]. SELinux on the docker daemon became supported in
+Red Hat Enterprise Linux 7.4. See the link:https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/?version=7[Red Hat Enterprise Linux release notes]
+for information on using OverlayFS with your version of RHEL, including supportability and usage caveats.
+
+The *overlay2* driver natively supports up to 128 lower OverlayFS layers but,
+the *overlay* driver works only with a single lower OverlayFS layer. Because of this capability, the *overlay2* driver provides better performance
+for layer-related Docker commands, such as `docker build`, and consumes fewer inodes on the backing filesystem.
+
+Because the *overlay* driver works with a single lower OverlayFS layer, you cannot implement multi-layered images as multiple OverlayFS layers.
+Instead, each image layer is implemented as its own directory under *_/var/lib/docker/overlay_*.
+Hard links are then used as a space-efficient way to reference data shared with lower layers.
+
+Docker link:https://docs.docker.com/storage/storagedriver/overlayfs-driver/[recommends] using the *overlay2* driver with OverlayFS rather than
+the *overlay* driver, because it is more efficient in terms of inode utilization.

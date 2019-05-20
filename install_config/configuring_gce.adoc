@@ -1,0 +1,45 @@
+[[install-config-configuring-gce]]
+= Configuring for Google Compute Engine
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:context: configuring-for-GCE
+
+toc::[]
+
+You can configure {product-title} to access an existing
+link:https://cloud.google.com/compute/docs/disks/[Google Compute Engine (GCE) infrastructure], including
+xref:../install_config/persistent_storage/persistent_storage_gce.adoc#install-config-persistent-storage-persistent-storage-gce[using GCE
+volumes as persistent storage] for application data.
+
+[[configuring-gce-prerequisites]]
+== Before you begin
+
+include::install_config/topics/gce_scopes_permissions.adoc[leveloffset=+2]
+
+include::install_config/topics/configuring_gce_objects.adoc[leveloffset=+2]
+
+[[gce-configuring-masters]]
+== Configuring {product-title} for GCE
+
+You can configure {product-title} for GCE in two ways:
+
+- xref:gce-configuring-masters-ansible_configuring-for-GCE[Using Ansible]
+- xref:gce-configuring-masters-manual_configuring-for-GCE[Manually by modifying the *_master-config.yaml_* file]
+
+include::install_config/topics/configuring_for_gce.adoc[leveloffset=+2]
+
+include::install_config/topics/manually_configuring_for_gce.adoc[leveloffset=+2]
+
+include::install_config/topics/configuring_for_gce_registry.adoc[leveloffset=+2]
+
+include::install_config/topics/configuring_for_gce_storage.adoc[leveloffset=+2]
+
+include::install_config/topics/red_hat_openshift_container_storage.adoc[leveloffset=+2]
+
+include::install_config/topics/using_gcp_load_balancer.adoc[leveloffset=+1]
+

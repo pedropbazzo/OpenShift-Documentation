@@ -1,0 +1,88 @@
+[[getting-started-index]]
+= Overview
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+
+ifdef::openshift-enterprise,openshift-origin[]
+[[introduction]]
+
+== Introduction
+
+{product-title} brings together Docker and Kubernetes, and provides an API to
+manage these services. {product-title} allows you to create and manage
+containers.
+
+[[why-use-openshift]]
+=== Why Should I Use {product-title}?
+
+Containers are standalone processes that run within their own environment,
+independent of the operating system and the underlying infrastructure. {product-title}
+helps you to develop, deploy, and manage container-based applications. It
+provides you with a self-service platform to create, modify, and deploy
+applications on demand, thus enabling faster development and release life
+cycles.
+
+_Think_ of images as cookie cutters and containers as the actual cookies.
+
+_Think_ of {product-title} as an operating system, images as applications that you run
+on them, and the containers as the actual running instances of those
+applications.
+
+endif::[]
+
+ifdef::openshift-origin,openshift-enterprise,openshift-dedicated,openshift-aro[]
+
+Find the appropriate topic based on your role to get started:
+
+[option="Getting Started"]
+|===
+|I am a... |Links to relevant topics
+
+ifdef::openshift-enterprise[]
+.^|Platform administrator
+|xref:../getting_started/install_openshift.adoc#getting-started-install-openshift[Install basic {product-title} environment]
+or xref:../install/index.adoc#install-planning[Install production {product-title} environment].
+endif::openshift-enterprise[]
+
+ifdef::openshift-origin[]
+.^|Cluster administrator
+|xref:../getting_started/administrators.adoc#getting-started-administrators[Getting Started for Administrators].
+endif::openshift-origin[]
+
+|Developer |Step through the basics of how to
+xref:../getting_started/developers_console.adoc#getting-started-developers-console[Create
+and Build an Image Using the Web Console] and create your first project and
+application.
+
+ifdef::openshift-dedicated,openshift-aro[]
+.^|Dedicated administrator
+|Understand your xref:../getting_started/dedicated_administrators.adoc#getting-started-dedicated-administrators[dedicated
+administrator] role.
+endif::openshift-dedicated,openshift-aro[]
+
+|===
+endif::openshift-origin,openshift-enterprise,openshift-dedicated,openshift-aro[]
+
+ifdef::openshift-online[]
+[.lead]
+{product-title} 3 is Red Hat's application hosting platform that makes it easy
+for developers to quickly build, launch, and scale container-based web apps in a
+public cloud environment.
+
+Check out the following topics to get started as an *application developer*
+trying out {product-title} {product-version}:
+
+* Step through a xref:../getting_started/basic_walkthrough.adoc#getting-started-basic-walkthrough[*basic walkthrough*]
+using the web console and create your first project and application.
+* Go xref:../getting_started/beyond_the_basics.adoc#getting-started-beyond-the-basics[*beyond the basics*] and get
+hands-on with the CLI.
+* Connect to {product-title} using
+http://tools.jboss.org/features/openshift.html#openshift-3[*Eclipse tooling*].
+* If you are familiar with {product-title} 2, learn about some xref:../getting_started/online_v2_vs_v3.adoc#getting-started-online-v2-vs-v3[*architectural and
+terminology changes*] introduced with {product-title} 3.
+endif::openshift-online[]

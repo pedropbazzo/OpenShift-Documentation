@@ -1,0 +1,820 @@
+[[cli-reference-cli-by-example-content]]
+== An introduction to the concepts and types in OpenShift
+
+====
+
+[options="nowrap"]
+----
+  // View all projects you have access to
+  $ oc projects
+
+  // See a list of all services in the current project
+  $ oc get svc
+
+  // Describe a deployment configuration in detail
+  $ oc describe dc mydeploymentconfig
+
+  // Show the images tagged into an image stream
+  $ oc describe is ruby-centos7
+----
+====
+
+
+== Log in to an OpenShift server
+
+====
+
+[options="nowrap"]
+----
+  // Log in interactively
+  $ oc login
+
+  // Log in to the given server with the given certificate authority file
+  $ oc login localhost:8443 --certificate-authority=/path/to/cert.crt
+
+  // Log in to the given server with the given credentials (will not prompt interactively)
+  $ oc login localhost:8443 --username=myuser --password=mypass
+----
+====
+
+
+== Request a new project
+
+====
+
+[options="nowrap"]
+----
+  // Create a new project with minimal information
+  $ oc new-project web-team-dev
+
+  // Create a new project with a display name and description
+  $ oc new-project web-team-dev --display-name="Web Team Development" --description="Development project for the web team."
+----
+====
+
+
+== Create a new application
+
+====
+
+[options="nowrap"]
+----
+  // Create an application based on the source code in the current git repository (with a public remote) and a container image
+  $ oc new-app . --docker-image=repo/langimage
+
+  // Create a Ruby application based on the provided [image]~[source code] combination
+  $ oc new-app openshift/ruby-20-centos7~https://github.com/openshift/ruby-hello-world.git
+
+  // Use the public Docker Hub MySQL image to create an app. Generated artifacts will be labeled with db=mysql
+  $ oc new-app mysql -l db=mysql
+
+  // Use a MySQL image in a private registry to create an app and override application artifacts' names
+  $ oc new-app --docker-image=myregistry.com/mycompany/mysql --name=private
+
+  // Create an application from a remote repository using its beta4 branch
+  $ oc new-app https://github.com/openshift/ruby-hello-world#beta4
+
+  // Create an application based on a stored template, explicitly setting a parameter value
+  $ oc new-app --template=ruby-helloworld-sample --param=MYSQL_USER=admin
+
+  // Create an application from a remote repository and specify a context directory
+  $ oc new-app https://github.com/youruser/yourgitrepo --context-dir=src/build
+
+  // Create an application based on a template file, explicitly setting a parameter value
+  $ oc new-app --file=./example/myapp/template.json --param=MYSQL_USER=admin
+----
+====
+
+
+== Show an overview of the current project
+
+====
+
+[options="nowrap"]
+----
+  // Show an overview of the current project
+  $ oc status
+----
+====
+
+
+== Switch to another project
+
+====
+
+[options="nowrap"]
+----
+  // Switch to 'myapp' project
+  $ oc project myapp
+
+  // Display the project currently in use
+  $ oc project
+----
+====
+
+
+== Starts a new build
+
+====
+
+[options="nowrap"]
+----
+  // Starts build from build config matching the name "golang"
+  $ oc start-build golang
+
+  // Starts build from build matching the name "golang-1"
+  $ oc start-build --from-build=golang-1
+
+  // Starts build from build config matching the name "golang" and watches the logs until the build
+  // completes or fails
+  $ oc start-build golang --follow
+----
+====
+
+
+== Show container logs from the build container
+
+====
+
+[options="nowrap"]
+----
+  // Stream logs from the latest build for build config "golang" to stdout
+  $ oc logs -f bc/golang
+  // Stream logs from the first build for build config "golang" to stdout
+  $ oc logs -f --version=1 bc/golang
+  // Stream logs from build "golang-1" to stdout
+  $ oc logs -f build/golang-1
+----
+====
+
+
+== View, start, cancel, or retry rollouts
+
+====
+
+[options="nowrap"]
+----
+  // Display information for the 'database' DeploymentConfig
+  $ oc describe dc/database
+
+  // Start a new deployment based on the 'database' DeploymentConfig
+  $ oc rollout latest dc/database
+
+  // View the status of the latest rollout
+  $ oc rollout status dc/database
+
+  // View the history of the 'database' DeploymentConfig
+  $ oc rollout history dc/database
+----
+====
+
+
+== Show logs from the deployment process
+
+====
+
+[options="nowrap"]
+----
+  // Stream logs from the latest deployment for deployment config "frontend" to stdout
+  // Note that if the deployment process is successful, logs from the application will
+  // be returned.
+  $ oc logs -f dc/frontend
+  // Return the logs from the first deployment for deployment config "database" to stdout
+  // Note that if the deployment process was successful, logs from the application will
+  // be returned.
+  $ oc logs --version=1 dc/database
+----
+====
+
+
+== Revert part of an application back to a previous deployment
+
+====
+
+[options="nowrap"]
+----
+  // Perform a rollback
+  $ oc rollout undo dc/foo
+
+  // See what the rollback will look like, but don't perform the rollback
+  $ oc rollout undo dc/foo --dry-run
+
+  // Perform a rollback to a specific revision
+  $ oc rollout undo dc/foo --to-revision=2
+----
+====
+
+
+== Create a new build configuration
+
+====
+
+[options="nowrap"]
+----
+  // Create a build config based on the source code in the current git repository (with a public remote) and a container image
+  $ oc new-build . --docker-image=repo/langimage
+
+  // Create a NodeJS build config based on the provided [image]~[source code] combination
+  $ oc new-build openshift/nodejs-010-centos7~https://bitbucket.com/user/nodejs-app
+
+  // Create a build config from a remote repository using its beta2 branch
+  $ oc new-build https://github.com/openshift/ruby-hello-world#beta2
+----
+====
+
+
+== Cancel a pending or running build
+
+====
+
+[options="nowrap"]
+----
+  // Cancel the build with the given name
+  $ oc cancel-build 1da32cvq
+
+  // Cancel the named build and print the build logs
+  $ oc cancel-build 1da32cvq --dump-logs
+
+  // Cancel the named build and create a new one with the same parameters
+  $ oc cancel-build 1da32cvq --restart
+----
+====
+
+
+== Imports images from a container image registry
+
+====
+
+[options="nowrap"]
+----
+  $ oc import-image mystream
+----
+====
+
+
+== Change the number of pods in a deployment
+
+====
+
+[options="nowrap"]
+----
+  // Scale replication controller named 'foo' to 3.
+  $ oc scale --replicas=3 replicationcontrollers foo
+
+  // If the replication controller named foo's current size is 2, scale foo to 3.
+  $ oc scale --current-replicas=2 --replicas=3 replicationcontrollers foo
+----
+====
+
+
+== Tag existing images into image streams
+
+====
+
+[options="nowrap"]
+----
+  // Tag the current image for the image stream 'openshift/ruby' and tag '2.0' into the image stream 'yourproject/ruby with tag 'tip'.
+  $ oc tag openshift/ruby:2.0 yourproject/ruby:tip
+
+  // Tag a specific image.
+  $ oc tag openshift/ruby@sha256:6b646fa6bf5e5e4c7fa41056c27910e679c03ebe7f93e361e6515a9da7e258cc yourproject/ruby:tip
+
+  // Tag an external container image.
+  $ oc tag --source=docker openshift/origin:latest yourproject/ruby:tip
+
+  // Remove the specified spec tag from an image stream.
+  $ openshift cli tag openshift/origin:latest -d
+----
+====
+
+
+== Display one or many resources
+
+====
+
+[options="nowrap"]
+----
+  // List all pods in ps output format.
+  $ oc get pods
+
+  // List a single replication controller with specified ID in ps output format.
+  $ oc get replicationController 1234-56-7890-234234-456456
+
+  // List a single pod in JSON output format.
+  $ oc get -o json pod 1234-56-7890-234234-456456
+
+  // Return only the status value of the specified pod.
+  $ oc get -o template pod 1234-56-7890-234234-456456 --template={{.currentState.status}}
+----
+====
+
+
+== Show details of a specific resource
+
+====
+
+[options="nowrap"]
+----
+  // Provide details about the ruby-20-centos7 image repository
+  $ oc describe imageRepository ruby-20-centos7
+
+  // Provide details about the ruby-sample-build build configuration
+  $ oc describe bc ruby-sample-build
+----
+====
+
+
+== Edit a resource on the server
+
+====
+
+[options="nowrap"]
+----
+  // Edit the service named 'docker-registry':
+  $ oc edit svc/docker-registry
+
+  // Edit the DeploymentConfig named 'my-deployment':
+  $ oc edit dc/my-deployment
+
+  // Use an alternative editor
+  $ OC_EDITOR="nano" oc edit dc/my-deployment
+
+  // Edit the service 'docker-registry' in JSON using the v1beta3 API format:
+  $ oc edit svc/docker-registry --output-version=v1beta3 -o json
+----
+====
+
+
+== Update the environment on a resource with a pod template
+
+====
+
+[options="nowrap"]
+----
+  // Update deployment 'registry' with a new environment variable
+  $ oc set env dc/registry STORAGE_DIR=/local
+
+  // List the environment variables defined on a deployment 'registry'
+  $ oc set env dc/registry --list
+
+  // List the environment variables defined on all pods
+  $ oc set env pods --all --list
+
+  // Output a YAML object with updated environment for deployment 'registry'
+  // Does not alter the object on the server
+  $ oc set env dc/registry STORAGE_DIR=/local -o yaml
+
+  // Update all replication controllers in the project to have ENV=prod
+  $ oc set env replicationControllers --all ENV=prod
+
+  // Remove the environment variable ENV from all deployment configs
+  $ oc set env deploymentConfigs --all ENV-
+
+  // Remove the environment variable ENV from a pod definition on disk and update the pod on the server
+  $ oc set env -f pod.json ENV-
+
+  // Set some of the local shell environment into a deployment on the server
+  $ env | grep RAILS_ | oc set env -e - dc/registry
+----
+====
+
+
+== Update volume on a resource with a pod template
+
+====
+
+[options="nowrap"]
+----
+  // Add new volume of type 'emptyDir' for deployment config 'registry' and mount under /opt inside the containers
+  // The volume name is auto generated
+  $ oc set volume dc/registry --add --mount-path=/opt
+
+  // Add new volume 'v1' with secret 'magic' for pod 'p1'
+  $ oc set volume pod/p1 --add --name=v1 -m /etc --type=secret --secret-name=magic
+
+  // Add new volume to pod 'p1' based on gitRepo (or other volume sources not supported by --type)
+  $ oc set volume pod/p1 --add -m /repo --source=<json-string>
+
+  // Add emptyDir volume 'v1' to a pod definition on disk and update the pod on the server
+  $ oc set volume -f pod.json --add --name=v1
+
+  // Create a new persistent volume and overwrite existing volume 'v1' for replication controller 'r1'
+  $ oc set volume rc/r1 --add --name=v1 -t persistentVolumeClaim --claim-name=pvc1 --overwrite
+
+  // Change pod 'p1' mount point to /data for volume v1
+  $ oc set volume pod p1 --add --name=v1 -m /data --overwrite
+
+  // Remove all volumes for pod 'p1'
+  $ oc set volume pod/p1 --remove --confirm
+
+  // Remove volume 'v1' from deployment config 'registry'
+  $ oc set volume dc/registry --remove --name=v1
+
+  // Unmount volume v1 from container c1 on pod p1 and remove the volume v1 if it is not referenced by any containers on pod p1
+  $ oc set volume pod/p1 --remove --name=v1 --containers=c1
+
+  // List volumes defined on replication controller 'r1'
+  $ oc set volume rc r1 --list
+
+  // List volumes defined on all pods
+  $ oc set volume pods --all --list
+
+  // Output json object with volume info for pod 'p1' but don't alter the object on server
+  $ oc set volume pod/p1 --add --name=v1 --mount=/opt -o json
+----
+====
+
+
+== Update the labels on a resource
+
+====
+
+[options="nowrap"]
+----
+  // Update pod 'foo' with the label 'unhealthy' and the value 'true'.
+  $ oc label pods foo unhealthy=true
+
+  // Update pod 'foo' with the label 'status' and the value 'unhealthy', overwriting any existing value.
+  $ oc label --overwrite pods foo status=unhealthy
+
+  // Update all pods in the namespace
+  $ oc label pods --all status=unhealthy
+
+  // Update pod 'foo' only if the resource is unchanged from version 1.
+  $ oc label pods foo status=unhealthy --resource-version=1
+
+  // Update pod 'foo' by removing a label named 'bar' if it exists.
+  // Does not require the --overwrite flag.
+  $ oc label pods foo bar-
+----
+====
+
+
+== Expose a replicated application as a service or route
+
+====
+
+[options="nowrap"]
+----
+  // Create a route based on service ruby-hello-world. The new route will re-use the ruby-hello-world labels
+  $ oc expose svc/ruby-hello-world
+
+  // Create a route and specify your own label and route name
+  $ oc expose svc/ruby-hello-world -l name=myroute --name=fromdowntown
+
+ifdef::openshift-enterprise,openshift-origin,openshift-dedicated[]
+  // Create a route and specify a hostname
+  $ oc expose svc/ruby-hello-world --hostname=www.example.com
+endif::[]
+
+  // Expose a deployment configuration as a service and use the specified port
+  $ oc expose dc/ruby-hello-world --port=8080
+----
+====
+
+
+== Autoscale an application
+
+====
+
+[options="nowrap"]
+----
+  // Auto scale a deployment config "foo", with the number of pods between 2 to 10, target CPU utilization at a default value that server applies
+  $ oc autoscale dc/foo --min=2 --max=10
+
+  // Auto scale a replication controller "foo", with the number of pods between 1 to 5, target CPU utilization at 80%
+  $ oc autoscale rc/foo --max=5 --cpu-percent=80
+----
+====
+
+
+ifdef::openshift-enterprise,openshift-origin,openshift-dedicated[]
+== Securely expose containers via a route
+
+====
+
+[options="nowrap"]
+----
+  // Create a secure edge-terminated route using the specified
+  // certificates/keys and hostname.  If the certificates/keys
+  // are not specified, those from the router will be re-used.
+  $ oc create route edge --service=frontend \
+      --cert=${MASTER_CONFIG_DIR}/ca.crt \
+      --key=${MASTER_CONFIG_DIR}/ca.key \
+      --ca-cert=${MASTER_CONFIG_DIR}/ca.crt \
+      --hostname=www.example.com
+
+  // Create a secure passthrough route.
+  $ oc create route passthrough --service=registry
+
+  // Create a secure reencrypt-terminated route in
+  // a similar fashion to edge.  The only additional
+  // requirement is to specify a destination CA certificate.
+  $ oc create route reencrypt --service=backend --dest-ca-cert=ca.crt
+----
+====
+endif::[]
+
+
+ifdef::openshift-online[]
+== Securely expose containers via a route
+
+====
+
+[options="nowrap"]
+----
+  // Create a secure edge-terminated route.
+  $ oc create route edge --service=frontend
+
+  // Create a secure passthrough route.
+  oc create route passthrough --service=frontend
+----
+====
+endif::[]
+
+
+== Delete a resource by filename, stdin, resource and ID, or by resources and label selector.
+
+====
+
+[options="nowrap"]
+----
+  // Delete a pod using the type and ID specified in pod.json.
+  $ oc delete -f pod.json
+
+  // Delete a pod based on the type and ID in the JSON passed into stdin.
+  $ cat pod.json | oc delete -f -
+
+  // Delete pods and services with label name=myLabel.
+  $ oc delete pods,services -l name=myLabel
+
+  // Delete a pod with ID 1234-56-7890-234234-456456.
+  $ oc delete pod 1234-56-7890-234234-456456
+
+  // Delete all pods
+  $ oc delete pods --all
+----
+====
+
+
+== Print the logs for a container in a pod.
+
+====
+
+[options="nowrap"]
+----
+  // Returns snapshot of ruby-container logs from pod backend.
+  $ oc logs backend -c ruby-container
+
+  // Starts streaming of ruby-container logs from pod backend.
+  // Both NAME and TYPE/NAME syntax are supported for pods.
+  $ oc logs -f pod/backend -c ruby-container
+----
+====
+
+
+== Execute a command in a container.
+
+====
+
+[options="nowrap"]
+----
+  // Get output from running 'date' in ruby-container from pod 123456-7890
+  $ oc exec -p 123456-7890 -c ruby-container date
+
+  // Switch to raw terminal mode, sends stdin to 'bash' in ruby-container from pod 123456-780 and sends stdout/stderr from 'bash' back to the client
+  $ oc exec -p 123456-7890 -c ruby-container -i -t -- bash -il
+----
+====
+
+
+== Open a remote shell session to a container. It will default to the first container if none is specified.
+
+====
+
+[options="nowrap"]
+----
+  // Open a shell session on the first container in pod 123456-7890
+  $ oc rsh 123456-7890
+
+  // Run the command 'cat /etc/resolv.conf' inside pod 123456-7890
+  $ oc rsh 123456-7890 cat /etc/resolv.conf
+----
+====
+
+
+== Forward one or more local ports to a pod.
+
+====
+
+[options="nowrap"]
+----
+  // Listens on ports 5000 and 6000 locally, forwarding data to/from ports 5000 and 6000 in the pod
+  $ oc port-forward -p mypod 5000 6000
+
+  // Listens on port 8888 locally, forwarding to 5000 in the pod
+  $ oc port-forward -p mypod 8888:5000
+
+  // Listens on a random port locally, forwarding to 5000 in the pod
+  $ oc port-forward -p mypod :5000
+
+  // Listens on a random port locally, forwarding to 5000 in the pod
+  $ oc port-forward -p mypod 0:5000
+----
+====
+
+
+== Run a proxy to the Kubernetes API server
+
+====
+
+[options="nowrap"]
+----
+  // Run a proxy to Kubernetes apiserver on port 8011, serving static content from ./local/www/
+  $ oc proxy --port=8011 --www=./local/www/
+
+  // Run a proxy to Kubernetes apiserver, changing the api prefix to k8s-api
+  // This makes e.g. the pods api available at localhost:8011/k8s-api/v1beta3/pods/
+  $ oc proxy --api-prefix=k8s-api
+----
+====
+
+
+== Create a resource by filename or stdin
+
+====
+
+[options="nowrap"]
+----
+  // Create a pod using the data in pod.json.
+  $ oc create -f pod.json
+
+  // Create a pod based on the JSON passed into stdin.
+  $ cat pod.json | oc create -f -
+----
+====
+
+
+== Update a resource by filename or stdin.
+
+====
+
+[options="nowrap"]
+----
+  // Update a pod using the data in pod.json.
+  $ oc replace -f pod.json
+
+  // Update a pod based on the JSON passed into stdin.
+  $ cat pod.json | oc replace -f -
+----
+====
+
+
+== Process a template into list of resources
+
+====
+
+[options="nowrap"]
+----
+  // Convert template.json file into resource list
+  $ oc process -f template.json
+
+  // Process template while passing a user-defined label
+  $ oc process -f template.json -l name=mytemplate
+
+  // Convert stored template into resource list
+  $ oc process foo
+
+  // Convert template.json into resource list
+  $ cat template.json | oc process -f -
+----
+====
+
+
+== Export resources so they can be used elsewhere
+
+[NOTE]
+====
+`oc export` is deprecated. See link:https://docs.openshift.com/container-platform/3.11/release_notes/ocp_3_11_release_notes.html#ocp-311-notable-technical-changes[Notable Technical Changes] for more details.
+====
+
+====
+
+[options="nowrap"]
+----
+  // export the services and deployment configurations labeled name=test
+  oc get -o yaml --export svc,dc -l name=test
+
+  // export to JSON
+  oc get -o json --export service
+----
+====
+
+
+== Create a new secret based on a key file or on files within a directory
+
+====
+
+[options="nowrap"]
+----
+  // Create a new secret named my-secret with a key named ssh-privatekey
+  $ oc create secret generic my-secret --from-file=ssh-privatekey=<path/to/ssh/private/key>
+
+  // Create a new secret named my-secret with keys named ssh-privatekey and ssh-publickey instead of the names of the keys on disk
+  $ oc create secret generic my-secret --from-file=ssh-privatekey=<path/to/ssh/private/key> --from-file=ssh-publickey=<path/to/ssh/public/key>
+
+  // Create a new secret named my-secret with keys for each file in the folder "bar"
+  $ oc create secret generic my-secret --from-file=<path/to/bar>
+----
+====
+
+
+== End the current server session
+
+====
+
+[options="nowrap"]
+----
+  // Logout
+  $ oc logout
+----
+====
+
+
+== Display merged kubeconfig settings or a specified kubeconfig file.
+
+====
+
+[options="nowrap"]
+----
+  // Show Merged kubeconfig settings.
+  $ oc config view
+
+  // Get the password for the e2e user
+  $ oc config view -o template --template='{{range .users}}{{ if eq .name "e2e" }}{{ index .user.password }}{{end}}{{end}}'
+----
+====
+
+
+== Set a cluster entry in kubeconfig
+
+====
+
+[options="nowrap"]
+----
+  // Set only the server field on the e2e cluster entry without touching other values.
+  $ oc config set-cluster e2e --server=https://1.2.3.4
+
+  // Embed certificate authority data for the e2e cluster entry
+  $ oc config set-cluster e2e --certificate-authority=~/.kube/e2e/kubernetes.ca.crt
+
+  // Disable cert checking for the dev cluster entry
+  $ oc config set-cluster e2e --insecure-skip-tls-verify=true
+----
+====
+
+
+== Set a user entry in kubeconfig
+
+====
+
+[options="nowrap"]
+----
+  // Set only the "client-key" field on the "cluster-admin"
+  // entry, without touching other values:
+  $ oc config set-credentials cluster-admin --client-key=~/.kube/admin.key
+
+  // Set basic auth for the "cluster-admin" entry
+  $ oc config set-credentials cluster-admin --username=admin --password=uXFGweU9l35qcif
+
+  // Embed client certificate data in the "cluster-admin" entry
+  $ oc config set-credentials cluster-admin --client-certificate=~/.kube/admin.crt --embed-certs=true
+----
+====
+
+
+== Set a context entry in kubeconfig
+
+====
+
+[options="nowrap"]
+----
+  // Set the user field on the gce context entry without touching other values
+  $ oc config set-context gce --user=cluster-admin
+----
+====
+
+
+== Change configuration files for the client
+
+====
+
+[options="nowrap"]
+----
+  // Change the config context to use
+  oc config use-context my-context
+
+  // Set the value of a config preference
+  oc config set preferences.some true
+----
+====

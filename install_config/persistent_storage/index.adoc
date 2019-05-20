@@ -1,0 +1,43 @@
+[[install-config-persistent-storage-index]]
+= Overview
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:prewrap!:
+
+The Kubernetes
+xref:../../architecture/additional_concepts/storage.adoc#architecture-additional-concepts-storage[persistent volume]
+framework allows you to provision an {product-title} cluster with persistent
+storage using networked storage available in your environment. This can be done
+after completing the initial {product-title} installation depending on your
+application needs, giving users a way to request those resources without having
+any knowledge of the underlying infrastructure.
+
+These topics show how to configure persistent volumes in {product-title} using
+the following supported volume plug-ins:
+
+- xref:../../install_config/persistent_storage/persistent_storage_nfs.adoc#install-config-persistent-storage-persistent-storage-nfs[NFS]
+- xref:../../install_config/persistent_storage/persistent_storage_glusterfs.adoc#install-config-persistent-storage-persistent-storage-glusterfs[GlusterFS]
+- xref:../../install_config/persistent_storage/persistent_storage_cinder.adoc#install-config-persistent-storage-persistent-storage-cinder[OpenStack
+Cinder]
+- xref:../../install_config/persistent_storage/persistent_storage_ceph_rbd.adoc#install-config-persistent-storage-persistent-storage-ceph-rbd[Ceph
+RBD]
+- xref:../../install_config/persistent_storage/persistent_storage_aws.adoc#install-config-persistent-storage-persistent-storage-aws[AWS Elastic Block Store (EBS)]
+- xref:../../install_config/persistent_storage/persistent_storage_gce.adoc#install-config-persistent-storage-persistent-storage-gce[GCE
+Persistent Disk]
+- xref:../../install_config/persistent_storage/persistent_storage_iscsi.adoc#install-config-persistent-storage-persistent-storage-iscsi[iSCSI]
+- xref:../../install_config/persistent_storage/persistent_storage_fibre_channel.adoc#install-config-persistent-storage-persistent-storage-fibre-channel[Fibre Channel]
+- xref:../../install_config/persistent_storage/persistent_storage_azure.adoc#install-config-persistent-storage-persistent-storage-azure[Azure Disk]
+- xref:../../install_config/persistent_storage/persistent_storage_azure_file.adoc#install-config-persistent-storage-persistent-storage-azure-file[Azure File]
+- xref:../../install_config/persistent_storage/persistent_storage_flex_volume.adoc#install-config-persistent-storage-persistent-storage-flex-volume[FlexVolume]
+- xref:../../install_config/persistent_storage/persistent_storage_vsphere.adoc#install-config-persistent-storage-persistent-storage-vsphere[VMware vSphere]
+- xref:../../install_config/persistent_storage/persistent_storage_csi.adoc#install-config-persistent-storage-persistent-storage-csi[Container Storage Interface (CSI)]
+- xref:../../install_config/persistent_storage/dynamically_provisioning_pvs.adoc#install-config-persistent-storage-dynamically-provisioning-pvs[Dynamic Provisioning and Creating Storage Classes]
+- xref:../../install_config/persistent_storage/pod_security_context.adoc#install-config-persistent-storage-pod-security-context[Volume Security]
+- xref:../../install_config/persistent_storage/selector_label_binding.adoc#selector-label-volume-binding[Selector-Label Volume Binding]
+////
+The following section provides useful troubleshooting methods when working with persistent volumes:
+- xref:../../install_config/persistent_storage/storage_troubleshooting.adoc#install-config-persistent-storage-storage-troubleshooting[Persistent Volume Troubleshooting].
+////

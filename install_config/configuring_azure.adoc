@@ -1,0 +1,84 @@
+[[install-config-configuring-azure]]
+= Configuring for Azure
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:context: configuring-for-azure
+
+toc::[]
+
+You can configure {product-title} to use link:https://azure.microsoft.com/en-us/services/storage/disks/[Microsoft Azure] load balancers and xref:../install_config/persistent_storage/persistent_storage_azure.adoc#install-config-persistent-storage-persistent-storage-azure[disks
+for persistent application data].
+
+
+[[configuring-azure-permissions]]
+== Before you begin
+
+include::install_config/topics/configuring_azure_authorization.adoc[leveloffset=+2]
+
+include::install_config/topics/configuring_azure_objects.adoc[leveloffset=+2]
+
+[[azure-configuration-file]]
+== The Azure configuration file
+
+Configuring {product-title} for Azure requires the *_/etc/azure/azure.conf_* file, on each node host.
+
+If the file does not exist, you can create it.
+
+----
+tenantId: <> <1>
+subscriptionId: <> <2>
+aadClientId: <> <3>
+aadClientSecret: <> <4>
+aadTenantId: <> <5>
+resourceGroup: <> <6>
+cloud: <> <7>
+location: <> <8>
+vnetName: <> <9>
+securityGroupName: <> <10>
+primaryAvailabilitySetName: <> <11>
+----
+<1> The AAD tenant ID for the subscription that the cluster is deployed in.
+<2> The Azure subscription ID that the cluster is deployed in.
+<3> The client ID for an AAD application with RBAC access to talk to Azure RM APIs.
+<4> The client secret for an AAD application with RBAC access to talk to Azure RM APIs.
+<5> Ensure this is the same as tenant ID (optional).
+<6> The Azure Resource Group name that the Azure VM belongs to.
+<7> The specific cloud region. For example, `AzurePublicCloud`.
+<8> The compact style Azure region. For example, `southeastasia` (optional).
+<9> Virtual network containing instances and used when creating load balancers.
+<10> Security group name associated with instances and load balancers.
+<11> Availability set to use when creating resources such as load balancers (optional).
+
+[IMPORTANT]
+====
+The NIC used for accessing the instance must have an `internal-dns-name` set or
+the node will not be able to rejoin the cluster, display build logs to the
+console, and will cause `oc rsh` to not work correctly.
+====
+
+include::install_config/topics/example_azure_inventory_file.adoc[leveloffset=+1]
+
+[[azure-configuring-masters]]
+== Configuring {product-title} for Microsoft Azure
+
+You can configure {product-title} for Microsoft Azure in two ways:
+
+- xref:azure-configuring-ansible_configuring-for-azure[Using Ansible]
+- xref:manually-configuring-for-azure_configuring-for-azure[Manually by modifying the *_master-config.yaml_* file]
+
+include::install_config/topics/configuring_azure_using_ansible.adoc[leveloffset=+2]
+
+include::install_config/topics/manually_configuring_for_azure.adoc[leveloffset=+2]
+
+include::install_config/topics/configuring_for_azure_registry.adoc[leveloffset=+2]
+
+include::install_config/topics/configuring_for_azure_storage.adoc[leveloffset=+2]
+
+include::install_config/topics/red_hat_openshift_container_storage.adoc[leveloffset=+2]
+
+include::install_config/topics/configuring_azure_load_balancer.adoc[leveloffset=+1]

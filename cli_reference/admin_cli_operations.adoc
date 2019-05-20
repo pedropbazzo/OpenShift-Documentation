@@ -1,0 +1,193 @@
+[[cli-reference-admin-cli-operations]]
+= Administrator CLI Operations
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+
+toc::[]
+
+== Overview
+
+This topic provides information on the administrator CLI operations and their
+syntax. You must xref:get_started_cli.adoc#cli-reference-get-started-cli[setup and login] with the CLI before
+you can perform these operations.
+
+ifdef::openshift-origin,openshift-enterprise[]
+The `openshift` command is used for starting services that make up the
+{product-title}  cluster. For example, `openshift start [master|node]`. However,
+it is also an all-in-one command that can perform all the same actions as the
+`oc` and `oc adm` commands via `openshift cli` and `openshift admin` respectively.
+endif::[]
+
+ifdef::openshift-dedicated[]
+The `oc adm` command (formerly the `oadm` command) is used for administrator CLI
+operations.
+endif::[]
+The administrator CLI differs from the normal set of commands under the
+xref:basic_cli_operations.adoc#cli-reference-basic-cli-operations[developer CLI], which uses the `oc` command, and
+is used more for project-level operations.
+
+ifdef::openshift-dedicated[]
+[NOTE]
+====
+Your login may or may not have access to the following administrative commands,
+depending on your account type.
+====
+endif::[]
+
+[[oadm-common-operations]]
+
+== Common Operations
+The administrator CLI allows interaction with the various objects that are
+managed by {product-title}. Many common `oc adm` operations are invoked using the
+following syntax:
+
+----
+$ oc adm <action> <option>
+----
+
+This specifies:
+
+- An `<action>` to perform, such as `new-project` or `groups`.
+- An available `<option>` to perform the action on as well as a value for the
+option. Options include `--output`.
+
+[IMPORTANT]
+====
+include::getting_started/configure_openshift.adoc[tag=ocadm-note]
+====
+
+[[basic-admin-cli-operations]]
+
+== Basic CLI Operations
+
+=== new-project
+Creates a new project:
+
+----
+$ oc adm new-project <project_name>
+----
+
+=== policy
+Manages authorization policies:
+----
+$ oc adm policy
+----
+
+=== groups
+Manages groups:
+----
+$ oc adm groups
+----
+
+ifdef::openshift-enterprise,openshift-origin[]
+[[install-cli-operations]]
+
+== Install CLI Operations
+
+=== router
+Installs a router:
+----
+$ oc adm router <router_name>
+----
+
+=== ipfailover
+Installs an IP failover group for a set of nodes:
+----
+$ oc adm ipfailover <ipfailover_config>
+----
+
+=== registry
+Installs an integrated container image registry:
+----
+$ oc adm registry
+----
+endif::[]
+
+[[maintenance-cli-operations]]
+
+== Maintenance CLI Operations
+
+ifdef::openshift-enterprise,openshift-origin,openshift-dedicated[]
+=== build-chain
+Outputs the inputs and dependencies of any builds:
+----
+$ oc adm build-chain <image_stream>[:<tag>]
+----
+endif::[]
+
+ifdef::openshift-enterprise,openshift-origin[]
+=== manage-node
+Manages nodes. For example, list or evacuate pods, or mark them ready:
+----
+$ oc adm manage-node
+----
+
+=== prune
+Removes older versions of resources from the server:
+----
+$ oc adm prune
+----
+endif::[]
+
+ifdef::openshift-enterprise,openshift-origin[]
+[[settings-cli-operations]]
+
+== Settings CLI Operations
+
+=== config
+Changes kubelet configuration files:
+----
+$ oc adm config <subcommand>
+----
+
+=== create-kubeconfig
+Creates a basic *_.kubeconfig_* file from client certificates:
+----
+$ oc adm create-kubeconfig
+----
+
+=== create-api-client-config
+Creates a configuration file for connecting to the server as a user:
+----
+$ oc adm create-api-client-config
+----
+
+[[advanced-cli-operations]]
+
+==  Advanced CLI Operations
+
+=== create-bootstrap-project-template
+Creates a bootstrap project template:
+----
+$ oc adm create-bootstrap-project-template
+----
+
+=== create-bootstrap-policy-file
+Creates the default bootstrap policy:
+----
+$ oc adm create-bootstrap-policy-file
+----
+
+=== create-login-template
+Creates a login template:
+----
+$ oc adm create-login-template
+----
+
+=== create-node-config
+Creates a configuration bundle for a node:
+----
+$ oc adm create-node-config
+----
+
+=== ca
+Manages certificates and keys:
+----
+$ oc adm ca
+----
+endif::[]

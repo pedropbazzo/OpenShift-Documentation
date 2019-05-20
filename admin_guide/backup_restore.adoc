@@ -1,0 +1,17 @@
+[[admin-guide-backup-and-restore]]
+= Backup and Restore
+{product-author}
+{product-version}
+:data-uri:
+:icons: font
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+:context: admin-restore
+
+toc::[]
+
+////
+This file has been removed from 3.7 onwards.
+////

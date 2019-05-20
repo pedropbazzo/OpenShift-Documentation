@@ -1,0 +1,26 @@
+// Module included in the following assemblies:
+//
+// install_config/persistent_storage/persistent_storage_glusterfs.adoc
+// - #install-example-basic
+// - #install-example-basic-external
+// - #install-example-registry
+// - #install-example-infra
+// - #install-example-full
+// - #install-example-full-external
+. Change to the playbook directory and run the installation playbook. Provide the relative path for the inventory
+file as an option.
++
+** For a new {product-title} installation:
++
+----
+$ cd /usr/share/ansible/openshift-ansible
+$ ansible-playbook -i <path_to_inventory_file> playbooks/prerequisites.yml
+$ ansible-playbook -i <path_to_inventory_file> playbooks/deploy_cluster.yml
+----
++
+** For an installation onto an existing {product-title} cluster:
++
+----
+$ cd /usr/share/ansible/openshift-ansible
+$ ansible-playbook -i <path_to_inventory_file> playbooks/openshift-glusterfs/config.yml
+----

@@ -1,0 +1,297 @@
+include::_snippets/glusterfs.adoc[]
+[[install-config-persistent-storage-persistent-storage-glusterfs]]
+= Persistent Storage Using {gluster}
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+toc::[]
+
+== Overview
+
+include::install_config/persistent_storage/topics/glusterfs_intro.adoc[]
+
+[[overview-containerized-glusterfs]]
+=== {gluster-native}
+
+include::install_config/persistent_storage/topics/glusterfs_overview_containerized.adoc[]
+
+[[overview-external-glusterfs]]
+=== {gluster-external}
+
+include::install_config/persistent_storage/topics/glusterfs_overview_external.adoc[]
+
+[[overview-standalone-glusterfs]]
+=== Standalone {gluster}
+
+include::install_config/persistent_storage/topics/glusterfs_overview_standalone.adoc[]
+
+[[overview-volumes]]
+=== GlusterFS Volumes
+
+include::install_config/persistent_storage/topics/glusterfs_overview_volumes.adoc[]
+
+[[overview-block-volumes]]
+=== gluster-block Volumes
+
+include::install_config/persistent_storage/topics/glusterfs_overview_block_volumes.adoc[]
+
+[[overview-s3-storage]]
+=== Gluster S3 Storage
+
+include::install_config/persistent_storage/topics/glusterfs_overview_s3_storage.adoc[]
+
+[[considerations]]
+== Considerations
+
+This section covers a few topics that should be taken into consideration when
+using {gluster} with {product-title}.
+
+[[considerations-software-prereqs]]
+=== Software Prerequisites
+
+include::install_config/persistent_storage/topics/glusterfs_prereqs_software.adoc[]
+
+[[considerations-hardware-prereqs]]
+=== Hardware Requirements
+
+include::install_config/persistent_storage/topics/glusterfs_prereqs_hardware.adoc[]
+
+[[considerations-storage-sizing]]
+=== Storage Sizing
+
+include::install_config/persistent_storage/topics/glusterfs_storage_sizing.adoc[]
+
+[[considerations-volume-ops]]
+=== Volume Operation Behaviors
+
+include::install_config/persistent_storage/topics/glusterfs_volume_ops.adoc[]
+
+[[considerations-volume-security]]
+=== Volume Security
+
+This section covers {gluster} volume security, including Portable Operating
+System Interface [for Unix] (POSIX) permissions and SELinux considerations.
+Understanding the basics of xref:pod_security_context.adoc#install-config-persistent-storage-pod-security-context[Volume Security],
+POSIX permissions, and SELinux is presumed.
+
+[[considerations-volume-security-posix]]
+==== POSIX Permissions
+
+include::install_config/persistent_storage/topics/glusterfs_security_posix.adoc[]
+
+[[considerations-volume-security-selinux]]
+==== SELinux
+
+include::install_config/persistent_storage/topics/glusterfs_security_selinux.adoc[]
+
+ifdef::openshift-enterprise[]
+[[support-requirements]]
+== Support Requirements
+
+include::install_config/persistent_storage/topics/glusterfs_support_requirements.adoc[]
+
+endif::[]
+
+[[install]]
+== Installation
+
+For standalone {gluster}, there is no component installation required to use it
+with {product-title}. {product-title} comes with a built-in GlusterFS volume
+driver, allowing it to make use of existing volumes on existing clusters. See
+xref:provisioning[provisioning] for more on how to make use of existing volumes.
+
+For {gluster-native} and {gluster-external}, it is recommended to use the
+xref:../../install/index.adoc#install-planning[cluster installation] process to
+install the required components.
+
+[[install-gluster-nodes]]
+=== {gluster-external}: Installing {gluster} Nodes
+
+include::install_config/persistent_storage/topics/glusterfs_install_nodes.adoc[]
+
+[[install-advanced-installer]]
+=== Using the Installer
+
+The xref:../../install/index.adoc#install-planning[cluster installation] process
+can be used to install one or both of two GlusterFS node groups:
+
+- `glusterfs`: A general storage cluster for use by user applications.
+- `glusterfs-registry`: A dedicated storage cluster for use by infrastructure
+applications such as an integrated OpenShift Container Registry.
+
+It is recommended to deploy both groups to avoid potential impacts on
+performance in I/O and volume creation. Both of these are defined in the
+inventory hosts file.
+
+The definition of the clusters is done by including the relevant names in the
+`[OSEv3:children]` group, creating similarly named groups, and then populating
+the groups with the node information. The clusters can then be configured
+through a variety of variables in the `[OSEv3:vars]` group. `glusterfs`
+variables begin with `openshift_storage_glusterfs_` and `glusterfs-registry`
+variables begin with `openshift_storage_glusterfs_registry_`. A few other
+variables, such as `openshift_hosted_registry_storage_kind`, interact with the
+GlusterFS clusters.
+
+To prevent {gluster} pods from upgrading after an outage leading to a cluster
+with different {gluster} versions, it is recommended to specify the image name
+and version tags for all containerized components. The relevant variables are:
+
+- `openshift_storage_glusterfs_image`
+- `openshift_storage_glusterfs_block_image`
+- `openshift_storage_glusterfs_s3_image`
+- `openshift_storage_glusterfs_heketi_image`
+- `openshift_storage_glusterfs_registry_image`
+- `openshift_storage_glusterfs_registry_block_image`
+- `openshift_storage_glusterfs_registry_s3_image`
+- `openshift_storage_glusterfs_registry_heketi_image`
+
+[NOTE]
+====
+The image variables for *_gluster-block_* and *_gluster-s3_* are only necessary
+if the corresponding deployment variables (the variables ending in
+`_block_deploy` and `_s3_deploy`) are true.
+====
+
+ifdef::openshift-enterprise[]
+The following are the recommended values for this release of {product-title}:
+
+- `openshift_storage_glusterfs_image=registry.redhat.io/rhgs3/rhgs-server-rhel7:v3.11`
+- `openshift_storage_glusterfs_block_image=registry.redhat.io/rhgs3/rhgs-gluster-block-prov-rhel7:v3.11`
+- `openshift_storage_glusterfs_s3_image=registry.redhat.io/rhgs3/rhgs-s3-server-rhel7:v3.11`
+- `openshift_storage_glusterfs_heketi_image=registry.redhat.io/rhgs3/rhgs-volmanager-rhel7:v3.11`
+
+[NOTE]
+====
+The values are same for the corresponding `_registry_` variables.
+====
+endif::[]
+
+For a complete list of variables, see the
+link:{gluster-role-link}[GlusterFS role README] on GitHub.
+
+Once the variables are configured, there are several playbooks available
+depending on the circumstances of the installation:
+
+- The main playbook for cluster installations can be used to deploy the
+GlusterFS clusters in tandem with an initial installation of {product-title}.
+  ** This includes deploying an integrated OpenShift Container Registry that
+  uses GlusterFS storage.
+  ** This does not include OpenShift Logging or OpenShift Metrics, as that is
+  currently still a separate step. See xref:install-example-infra[{gluster-native} for OpenShift Logging and Metrics]
+  for more information.
+- `playbooks/openshift-glusterfs/config.yml` can be used to deploy the clusters
+onto an existing {product-title} installation.
+- `playbooks/openshift-glusterfs/registry.yml` can be used to deploy the
+clusters onto an existing {product-title} installation. In addition, this will
+deploy an integrated OpenShift Container Registry which uses GlusterFS storage.
++
+[IMPORTANT]
+====
+There must not be a pre-existing registry in the {product-title} cluster.
+====
+- `playbooks/openshift-glusterfs/uninstall.yml` can be used to remove existing
+clusters matching the configuration in the inventory hosts file. This is useful
+for cleaning up the {product-title} environment in the case of a failed
+deployment due to configuration errors.
++
+[NOTE]
+====
+The GlusterFS playbooks are not guaranteed to be idempotent.
+====
++
+[NOTE]
+====
+Running the playbooks more than once for a given installation is currently not supported without deleting the entire GlusterFS installation (including disk data) and starting over.
+====
+
+[[install-example-basic]]
+==== Example: Basic {gluster-native} Installation
+
+include::install_config/persistent_storage/topics/glusterfs_example_basic.adoc[]
++
+include::install_config/persistent_storage/persistent_storage_glusterfs.adoc[tag=commonexampleglusterfsnote]
++
+include::install_config/persistent_storage/topics/glusterfs_run_installer.adoc[]
+
+[[install-example-basic-external]]
+==== Example: Basic {gluster-external} Installation
+
+include::install_config/persistent_storage/topics/glusterfs_example_basic_external.adoc[]
++
+include::install_config/persistent_storage/persistent_storage_glusterfs.adoc[tag=commonexampleglusterfsnote]
++
+include::install_config/persistent_storage/topics/glusterfs_run_installer.adoc[]
+
+[[install-example-registry]]
+==== Example: {gluster-native} with an Integrated OpenShift Container Registry
+
+include::install_config/persistent_storage/topics/glusterfs_example_registry.adoc[]
++
+include::install_config/persistent_storage/persistent_storage_glusterfs.adoc[tag=commonexampleglusterfsnote]
++
+include::install_config/persistent_storage/topics/glusterfs_run_installer.adoc[]
+
+[[install-example-infra]]
+==== Example: {gluster-native} for OpenShift Logging and Metrics
+
+include::install_config/persistent_storage/topics/glusterfs_example_infra.adoc[]
++
+include::install_config/persistent_storage/persistent_storage_glusterfs.adoc[tag=commonexampleglusterfsnote]
++
+include::install_config/persistent_storage/topics/glusterfs_run_installer.adoc[]
+
+[[install-example-full]]
+==== Example: {gluster-native} for Applications, Registry, Logging, and Metrics
+
+include::install_config/persistent_storage/topics/glusterfs_example_full.adoc[]
++
+include::install_config/persistent_storage/persistent_storage_glusterfs.adoc[tag=commonexampleglusterfsnote]
++
+include::install_config/persistent_storage/topics/glusterfs_run_installer.adoc[]
+
+[[install-example-full-external]]
+==== Example: {gluster-external} for Applications, Registry, Logging, and Metrics
+
+include::install_config/persistent_storage/topics/glusterfs_example_full_external.adoc[]
++
+include::install_config/persistent_storage/persistent_storage_glusterfs.adoc[tag=commonexampleglusterfsnote]
++
+include::install_config/persistent_storage/topics/glusterfs_run_installer.adoc[]
+
+[[uninstall]]
+== Uninstall {gluster-native}
+
+include::install_config/persistent_storage/topics/glusterfs_uninstall.adoc[]
+
+[[provisioning]]
+== Provisioning
+
+GlusterFS volumes can be provisioned either statically or dynamically. Static
+provisioning is available with all configurations. Only {gluster-native} and
+{gluster-external} support dynamic provisioning.
+
+[[provisioning-static]]
+=== Static Provisioning
+
+include::install_config/persistent_storage/topics/glusterfs_static_provisioning.adoc[]
+
+[[provisioning-dynamic]]
+=== Dynamic Provisioning
+
+include::install_config/persistent_storage/topics/glusterfs_dynamic_provisioning.adoc[]
+
+ifdef::openshift-nextgen[]
+// tag::commonexampleglusterfsnote[]
+[NOTE]
+====
+The preceding steps only provide some of the options that must be added to the
+inventory file. Use the complete inventory file to deploy {gluster}.
+====
+// end::commonexampleglusterfsnote[]
+endif::[]

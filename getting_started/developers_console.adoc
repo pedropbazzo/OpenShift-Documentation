@@ -1,0 +1,161 @@
+[[getting-started-developers-console]]
+= Create and Build an Image Using the Web Console
+:toc: macro
+:toc-title:
+:data-uri:
+:experimental:
+:prewrap!:
+:description: This is the getting started experience for Developers, focusing on web console usage.
+:keywords: getting started, developers, web console, templates
+
+////
+TODO According to Jim Minter, the content in this topic is largely the same for ARO as OSD, but may need some tweaks. For example, the application address.
+////
+
+toc::[]
+
+include::getting_started/developers_cli.adoc[tag=overview]
+include::getting_started/developers_cli.adoc[tag=overview-online]
+
+[[getting-started-developers-console-languages]]
+
+include::getting_started/developers_cli.adoc[tag=dev-cli-languages]
+
+[[developers-console-browser-reqs]]
+=== Browser Requirements
+
+Review the
+xref:../architecture/infrastructure_components/web_console.adoc#architecture-infrastructure-components-web-console[browser versions
+and operating systems] that can be used to access the web console.
+
+[[developers-console-before-you-begin]]
+
+include::getting_started/developers_cli.adoc[tag=beforeyoubegin]
+
+include::getting_started/developers_cli.adoc[tag=forking]
+
+[[developers-console-creating-a-project]]
+== Creating a Project
+
+To create an application, you must first create a new project, then select an
+InstantApp template. From there, {product-title} begins the build process and
+creates a new deployment.
+
+. Visit the {product-title} web console in your browser. The web console uses a self-signed certificate, so if prompted, continue past a browser warning.
+. Log in using the username and password recommended to you by your administrator.
+. To create a new project, click *New Project*.
+. Type a unique name, display name, and description for the new project.
+. Click *Create*.
++
+The web console's welcome screen loads.
+
+[[developers-console-creating-an-application]]
+== Creating an Application
+
+The Select Image or Template page gives you the option to create from a publicly
+accessible git repository, or from a template:
+
+. If creating a new project did not automatically redirect you to the Select Image or Template page, you might need to click *Add to Project*.
+. Click *Browse*, then select *ruby* from the drop-down list.
+. Click the *ruby:latest* builder image.
+. Type a *name* for your application, and specify the *Git Repository URL*, which is `https://github.com/<your_github_username>/ruby-ex.git`.
+. Optionally, click *Show advanced routing, build, and deployment options*, though by default this example application automatically creates a route, webhook trigger, and build change triggers.
+. Click *Create*.
++
+[NOTE]
+====
+After creation, some of these settings can be modified from the web console by clicking *Browse*, *Builds*, select your build, then click *Actions*, and either *Edit* or *Edit YAML*.
+====
+
+Creating your application might take some time. You can follow along on the
+Overview page of the web console to see the new resources being created, and
+watch the progress of the build and deployment.
+
+While the Ruby pod is being created, its status is shown as pending. The Ruby
+pod then starts up and displays its newly-assigned IP address. When the Ruby pod
+is running, the build is complete.
+
+[[developers-console-view-app]]
+== Verify the Application is Running
+If your DNS is correctly configured, then your new application can be accessed using a web browser. If you cannot access your application, then speak with your system administrator.
+
+To view your new application:
+
+// TODO The application web address in the following line needs to be updated for ARO
+
+ifdef::openshift-dedicated[]
+. In the web console, view the overview page to determine the web address for the application. For example, under *SERVICE: RUBY-EX* you should see something similar to: `ruby-ex-my-test.example.openshiftapps.com`.
+. Visit the web address for your new application.
+endif::[]
+
+ifdef::openshift-aro[]
+. In the web console, view the overview page to determine the web address for the application. For example, under *SERVICE: RUBY-EX* you should see something similar to: `ruby-ex-my-test.apps.<random>.<cluster-region>.azmosa.io`.
+. Visit the web address for your new application.
+endif::[]
+
+[[developers-console-configure-auto-builds]]
+
+// tag::deploycode1[]
+
+== Configuring Automated Builds
+
+You forked the source code for this application from the
+https://github.com/sclorg/ruby-ex[{product-title} GitHub repository]. Therefore,
+you can use a webhook to automatically trigger a rebuild of your application
+whenever you push code changes to your forked repository.
+
+To set up a webhook for your application:
+
+// end::deploycode1[]
+
+. From the Web Console, navigate to the project containing your application.
+. Click the *Browse* tab, then click *Builds*.
+. Click your build name, then click the *Configuration* tab.
+. Click image:copy.jpg["Copy"] next to *GitHub webhook URL* to copy your webhook payload URL.
++
+// tag::deploycode2[]
++
+. Navigate to your forked repository on GitHub, then click *Settings*.
+. Click *Webhooks & Services*.
+. Click *Add webhook*.
+. Paste your webhook URL into the *Payload URL* field.
+. Click *Add webhook* to save.
+
+GitHub now attempts to send a ping payload to your {product-title} server to ensure that communication is successful. If you see a green check mark appear next to your webhook URL, then it is correctly configured. Hover your mouse over the check mark to see the status of the last delivery.
+
+The next time you push a code change to your forked repository, your application will automatically rebuild.
+
+// end::deploycode2[]
+
+[[developers-console-write-code-change]]
+
+// tag::deploycode3[]
+
+== Writing a Code Change
+
+To work locally and then push changes to your application:
+
+. On your local machine, use a text editor to change the sample application's source for the file *_ruby-ex/config.ru_*
+. Make a code change that will be visible from within your application. For example: on line 229, change the title from `Welcome to your Ruby application on OpenShift` to `This is my Awesome OpenShift Application`, then save your changes.
+. Commit the change in git, and push the change to your fork.
++
+If your webhook is correctly configured, your application will immediately
+rebuild itself based on your changes. Once the rebuild is successful, view your
+updated application using the route that was created earlier.
+
+Now going forward, all you need to do is push code updates and {product-title}
+handles the rest.
+
+// end::deploycode3[]
+
+[[developers-console-manually-rebuild-images]]
+
+=== Manually Rebuilding Images
+
+You may find it useful to manually rebuild an image if your webhook is not
+working, or if a build fails and you do not want to change the code before
+restarting the build. To manually rebuild the image based on your latest
+committed change to your forked repository:
+
+. Click the *Browse* tab, then click *Builds*.
+. Find your build, then click *Start Build*.

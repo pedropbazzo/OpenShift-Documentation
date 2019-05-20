@@ -1,0 +1,203 @@
+[[using-images-s2i-images-java]]
+= Java
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+
+toc::[]
+
+[[s2i-images-java-overview]]
+== Overview
+
+{product-title} provides an
+xref:../../architecture/core_concepts/builds_and_image_streams.adoc#source-build[S2I
+builder image] for building Java applications.  This builder image takes your
+application source or binary artifacts, builds the source using Maven (if source
+was provided), and assembles the artifacts with any required dependencies to
+create a new, ready-to-run image containing your Java application. This
+resulting image can be run on {product-title} or run directly with Docker.
+
+The builder image is intended for use with
+link:https://maven.apache.org[Maven]-based Java standalone projects that are run
+via main class.
+
+
+[[s2i-images-java-versions]]
+== Versions
+
+The current version of the Java S2I builder image supports OpenJDK 1.8, Jolokia
+1.3.5, and Maven 3.3.9-2.8.
+
+
+[[s2i-images-java-images]]
+== Images
+
+The RHEL 7 image is available through the Red Hat Registry:
+
+----
+$ docker pull registry.redhat.io/redhat-openjdk-18/openjdk18-openshift
+----
+
+ifdef::openshift-online[]
+You can use the image through the `redhat-openjdk18-openshift` image stream.
+endif::openshift-online[]
+
+ifndef::openshift-online[]
+To use this image on {product-title}, you can either access it directly from
+the Red Hat Registry or push it into your
+xref:../../install_config/registry/index.adoc#install-config-registry-overview[{product-title}
+container image registry].  Additionally, you can create an
+xref:../../architecture/core_concepts/builds_and_image_streams.adoc#image-streams[image
+stream] that points to the image, either in your container image registry or at the
+external location. Your {product-title} resources can then reference the
+link:https://github.com/jboss-openshift/application-templates/blob/master/jboss-image-streams.json[image
+stream definition].
+endif::openshift-online[]
+
+[[s2i-images-java-build-process]]
+== Build Process
+include::using_images/s2i_images/topics/build_process.adoc[]
+
+[[s2i-images-java-configuration]]
+== Configuration
+
+By default, the Java S2I builder image uses Maven to build the project with the
+following goals and options:
+
+----
+mvn -Dmaven.repo.local=/tmp/artifacts/m2 -s /tmp/artifacts/configuration/settings.xml -e -Popenshift -DskipTests -Dcom.redhat.xpaas.repo.redhatga -Dfabric8.skip=true package -Djava.net.preferIPv4Stack=true
+----
+
+Based on these defaults, the builder image compiles the project and copies all
+the transitive dependencies into the output directory without running tests.
+Additionally, if the project has a profile named `*openshift*`, then it is
+activated for the build.
+
+You can override these default goals and options by specifying the following environment variables:
+
+.Java Environment Variables
+[options="header"]
+|===
+
+|Variable name |Description
+
+|`*ARTIFACT_DIR*`
+|The relative path to the target where JAR files are created for multi-module builds.
+
+|`*JAVA_MAIN_CLASS*`
+|The main class to use as the argument to Java. This can also be specified in the *_.s2i/environment_* file as a Maven property inside the project (*docker.env.Main*).
+
+|`*MAVEN_ARGS*`
+|The arguments that are passed to the mvn command.
+
+|===
+
+[[s2i-images-java-deploy-applications]]
+== Building and Deploying Java Applications
+
+ifdef::openshift-enterprise[]
+[IMPORTANT]
+====
+The
+link:https://github.com/jboss-openshift/application-templates/blob/master/jboss-image-streams.json[OpenJDK
+image stream] must first be installed. If you ran a standard installation, the
+image stream will be present.
+====
+endif::openshift-enterprise[]
+
+The same S2I builder image can be used to build a Java application from source
+or from binary artifacts.
+
+[[s2i-images-java-deploy-applications-from-source]]
+== Building and Deploying from Source
+
+The Java S2I builder image can be used to build an application from source by running `oc
+new-app` against a source repository:
+
+ifdef::openshift-online[]
+----
+$ oc new-app redhat-openjdk18-openshift~https://github.com/jboss-openshift/openshift-quickstarts --context-dir=undertow-servlet
+----
+endif::openshift-online[]
+
+ifndef::openshift-online[]
+----
+$ oc new-app registry.redhat.io/redhat-openjdk-18/openjdk18-openshift~https://github.com/jboss-openshift/openshift-quickstarts --context-dir=undertow-servlet
+----
+endif::openshift-online[]
+
+By default, tests are not run.  To build an application and run tests as part of
+the build, override the default `MAVEN_ARGS`, as in the following command:
+
+ifdef::openshift-online[]
+----
+$ oc new-app redhat-openjdk18-openshift~<git_repo_URL> --context-dir=<context-dir> --build-env='MAVEN_ARGS=-e -Popenshift -Dcom.redhat.xpaas.repo.redhatga package'
+----
+endif::openshift-online[]
+
+ifndef::openshift-online[]
+----
+$ oc new-app registry.redhat.io/redhat-openjdk-18/openjdk18-openshift~<git_repo_URL> --context-dir=<context-dir> --build-env='MAVEN_ARGS=-e -Popenshift -Dcom.redhat.xpaas.repo.redhatga package'
+----
+endif::openshift-online[]
+
+If a Java project consists of multiple Maven modules, it can be useful to
+explicitly specify the artifact output directory.  Specifying the directory
+where the Maven project outputs the artifacts enables the S2I build to pick
+them up.
+
+To specify the modules to build and the artifact output directory, use the
+following command:
+
+ifdef::openshift-online[]
+----
+$ oc new-app redhat-openjdk18-openshift~<git_repo_URL> --context-dir=<context-dir> --build-env='ARTIFACT_DIR=relative/path/to/artifacts/dir' --build-env='MAVEN_ARGS=install -pl <groupId>:<artifactId> -am'
+----
+endif::openshift-online[]
+
+ifndef::openshift-online[]
+----
+$ oc new-app registry.redhat.io/redhat-openjdk-18/openjdk18-openshift~<git_repo_URL> --context-dir=<context-dir> --build-env='ARTIFACT_DIR=relative/path/to/artifacts/dir' --build-env='MAVEN_ARGS=install -pl <groupId>:<artifactId> -am'
+----
+endif::openshift-online[]
+
+[[s2i-images-java-deploy-applications-from-binary]]
+== Building and Deploying from Binary Artifacts
+
+The Java S2I builder image can be used to build an application using binary
+artifacts that you provide.  To do so, first create a new binary build using the
+`oc new-build` command:
+
+ifdef::openshift-online[]
+----
+$ oc new-build --name=<application-name> redhat-openjdk18-openshift --binary=true
+----
+endif::openshift-online[]
+
+ifndef::openshift-online[]
+----
+$ oc new-build --name=<application-name> registry.redhat.io/redhat-openjdk-18/openjdk18-openshift --binary=true
+----
+endif::openshift-online[]
+
+Next, start a build using the `oc start-build` command, specifying the path to
+the binary artifacts on your local machine:
+
+----
+$ oc start-build <application-name> --from-dir=/path/to/artifacts --follow
+----
+
+Finally, use the `oc new-app` command to create an application:
+
+----
+$ oc new-app <application-name>
+----
+
+[[moreinfo]]
+== Additional Information and Examples
+
+- Find additional information and examples in the link:https://access.redhat.com/documentation/en-us/red_hat_jboss_middleware_for_openshift/3/html-single/red_hat_java_s2i_for_openshift/[Red Hat JBoss Middleware] documentation.

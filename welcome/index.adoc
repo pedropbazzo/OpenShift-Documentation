@@ -1,0 +1,155 @@
+[[welcome-index]]
+= {product-title} {product-version} Documentation
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+
+[.lead]
+Welcome to the {product-title} {product-version} documentation, where you can
+find information and guides to help you learn about {product-title} and start
+exploring its features.
+
+From getting started with creating your first application, to trying out more
+advanced build and deployment techniques, these resources provide what you need
+to set up and manage your {product-title} environment
+ifdef::openshift-origin,openshift-enterprise[]
+as a **cluster administrator** or an **application developer**.
+endif::[]
+ifdef::openshift-dedicated,openshift-aro,openshift-online[]
+as an **application developer**.
+endif::[]
+
+ifdef::openshift-online[]
+[IMPORTANT]
+====
+{product-title} {product-version} is community supported only.
+====
+endif::[]
+
+[TIP]
+====
+Use the left navigation bar to browse the documentation, the Search bar in the
+top-left to look for something specific, or the links below to access some
+highlights.
+====
+
+ifdef::openshift-origin[]
+'''
+[cols="2",frame="none",grid="none"]
+|===
+
+.^|[big]#Release Notes#
+a|[none]
+
+* link:https://github.com/openshift/origin/releases[Find all release notes on GitHub]
+
+|===
+endif::[]
+
+'''
+[cols="2",frame="none",grid="none"]
+|===
+
+.^|[big]#Get Started with {product-title}#
+a|[none]
+
+ifdef::openshift-enterprise,openshift-origin,openshift-dedicated[]
+* xref:../getting_started/developers_console.adoc#getting-started-developers-console[As an application developer with an {product-title} environment]
+endif::openshift-enterprise,openshift-origin,openshift-dedicated[]
+
+ifdef::openshift-online[]
+* xref:../getting_started/index.adoc#getting-started-index[Check out a walkthrough on creating your first app]
+endif::openshift-online[]
+
+ifdef::openshift-origin[]
+* xref:../getting_started/administrators.adoc#getting-started-administrators[As a cluster administrator with an {product-title} environment]
+endif::[]
+|===
+
+'''
+[cols="2",frame="none",grid="none"]
+|===
+
+.^|[big]#Learning Resources#
+a|[none]
+
+ifdef::openshift-enterprise[]
+* Find out the what's new in the latest release of {product-title} 3
+endif::[]
+ifdef::openshift-dedicated[]
+* xref:../release_notes/osd_3_2_release_notes.adoc#release-notes-osd-3-2-release-notes[Find out the what's new in the latest release of {product-title} 3]
+endif::[]
+
+* xref:../architecture/index.adoc#architecture-index[Understand the architecture of {product-title}]
+
+* xref:../cli_reference/index.adoc#cli-reference-index[Get to know the CLI]
+|===
+
+ifdef::openshift-enterprise,openshift-origin[]
+'''
+[cols="2",frame="none",grid="none"]
+|===
+
+.^|[big]#Run Your Own Platform-as-a-Service (PaaS)#
+a|[none]
+
+* xref:../install_config/index.adoc#install-config-index[Choose a quick or advanced installation of {product-title} at your site]
+
+* xref:../admin_guide/index.adoc#admin-guide-index[Maintain and administer your {product-title} cluster]
+|===
+endif::[]
+
+'''
+
+[cols="2",frame="none",grid="none"]
+|===
+
+.^|[big]#Build, Deploy, and Manage Applications#
+a|[none]
+
+* xref:../dev_guide/application_lifecycle/development_process.adoc#dev-guide-development-process[Understand the application life cycle on {product-title}]
+
+* xref:../dev_guide/application_lifecycle/new_app.adoc#dev-guide-new-app[Bring your code or use example repos to create a new application]
+
+* xref:../dev_guide/dev_tutorials/quickstarts.adoc#dev-guide-app-tutorials-quickstarts[Check out the Quickstart templates]
+
+* xref:../dev_guide/index.adoc#dev-guide-index[Further explore the Developer's Guide]
+|===
+
+'''
+[cols="2",frame="none",grid="none"]
+|===
+
+.^|[big]#Advanced Resources#
+a|[none]
+
+* xref:../rest_api/index.adoc#rest-api-index[REST API reference]
+|===
+
+'''
+[cols="2",frame="none",grid="none"]
+|===
+
+.^|[big]#Using {product-title}'s Official Images#
+a|[none]
+
+* xref:../using_images/s2i_images/index.adoc#using-images-s2i-images-index[Web frameworks powered by Source-to-Image (S2I)]
+* xref:../using_images/db_images/index.adoc#using-images-db-images-index[Databases to back your application]
+ifdef::openshift-enterprise,openshift-dedicated,openshift-aro,openshift-online[]
+endif::[]
+* xref:../using_images/other_images/other_container_images.adoc#using-images-other-container-images[Or, bring and run any container image]
+
+|===
+
+'''
+[cols="2",frame="none",grid="none"]
+|===
+
+.^|
+a|[none]
+
+* xref:legal_notice.adoc#welcome-legal-notice[Legal Notice]
+
+|===
+'''

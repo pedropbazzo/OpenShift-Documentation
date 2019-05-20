@@ -1,0 +1,1326 @@
+[[dev-guide-managing-images]]
+= Managing Images
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+toc::[]
+
+== Overview
+
+An
+xref:../architecture/core_concepts/builds_and_image_streams.adoc#image-streams[image
+stream] comprises any number of
+xref:../architecture/core_concepts/containers_and_images.adoc#docker-images[container
+images] identified by tags. It presents a single virtual view of related images,
+similar to a container image repository.
+
+By watching an image stream, builds and deployments can receive notifications
+when new images are added or modified and react by performing a build or
+deployment, respectively.
+
+There are many ways you can interact with images and set up image streams,
+depending on where the images' registries are located, any authentication
+requirements around those registries, and how you want your builds and
+deployments to behave. The following sections cover a range of these topics.
+
+[[tagging-images]]
+== Tagging Images
+
+Before working with {product-title} image streams and their tags, it helps
+to first understand image tags in the context of container images generally.
+
+Container images can have names added to them that make it more intuitive to determine
+what they contain, called a _tag_. Using a tag to specify the version of what is contained
+in the image is a common use case. If you have an image named *ruby*, you could
+have a tag named *2.0* for 2.0 version of Ruby, and another named *latest* to
+indicate literally the latest built image in that repository overall.
+
+When interacting directly with images using the `docker` CLI, the `docker tag`
+command can add tags, which essentially adds an alias to an image that can
+consist of several parts. Those parts can include:
+
+----
+<registry_server>/<user_name>/<image_name>:<tag>
+----
+
+The `<user_name>` part in the above could also refer to a
+xref:../architecture/core_concepts/projects_and_users.adoc#projects[project] or
+xref:../architecture/core_concepts/projects_and_users.adoc#namespaces[namespace]
+if the image is being stored in an {product-title} environment with an internal
+registry (the OpenShift Container Registry).
+
+{product-title} provides the `oc tag` command, which is similar to the `docker
+tag` command, but operates on image streams instead of directly on images.
+
+[NOTE]
+====
+See Red Hat Enterprise Linux 7's
+https://access.redhat.com/documentation/en/red-hat-enterprise-linux-atomic-host/version-7/getting-started-with-containers/#creating_docker_images[Getting Started with Containers]
+documentation for more about tagging images directly using the `docker` CLI.
+====
+
+[[adding-tag]]
+=== Adding Tags to Image Streams
+
+Keeping in mind that an image stream in {product-title} comprises zero or more
+container images identified by tags, you can add tags to an image stream using the
+`oc tag` command:
+
+----
+$ oc tag <source> <destination>
+----
+
+For example, to configure the *ruby* image streams *static-2.0* tag to always
+refer to the current image for the *ruby* image streams *2.0* tag:
+
+----
+$ oc tag ruby:2.0 ruby:static-2.0
+----
+
+This creates a new image stream tag named *static-2.0* in the *ruby* image
+stream. The new tag directly references the image id that the *ruby:2.0*
+image stream tag pointed to at the time `oc tag` was run, and the image it points
+to never changes.
+
+There are different types of tags available. The default behavior uses a
+_permanent_ tag, which points to a specific image in time; even when the source
+changes, the new (destination) tag does not change.
+
+A _tracking_ tag means the destination tag's metadata is updated during
+the import of the source tag. To ensure the destination tag is updated whenever the
+source tag changes, use the `--alias=true` flag:
+
+----
+$ oc tag --alias=true <source> <destination>
+----
+
+[NOTE]
+====
+Use a _tracking_ tag for creating permanent aliases (for example, `latest` or
+`stable`). The tag works correctly _only_ within a single image stream. Trying
+to create a cross-image-stream alias produces an error.
+====
+
+ifdef::openshift-origin,openshift-enterprise[]
+You can also add the `--scheduled=true` flag to have the destination tag be
+refreshed (i.e., re-imported) periodically. The period is
+xref:../install_config/master_node_configuration.adoc#master-config-image-policy-config[configured
+globally] at the system level.
+endif::[]
+ifdef::openshift-online,openshift-dedicated[]
+You can also add the `--scheduled=true` flag to have the destination tag be
+refreshed (i.e., re-imported) periodically. The period is
+configured globally at the system level.
+endif::[]
+See
+xref:importing-tag-and-image-metadata[Importing Tag and Image Metadata] for more
+details.
+
+The `--reference` flag creates an image stream tag that is not imported. The
+tag points to the source location, permanently.
+
+If you want to instruct Docker to always fetch the tagged image from the
+integrated registry, use `--reference-policy=local`. The registry uses the
+ifdef::openshift-origin,openshift-enterprise[]
+xref:../install_config/registry/extended_registry_configuration.adoc#middleware-repository-pullthrough[pull-through feature]
+endif::[]
+ifdef::openshift-online[]
+pull-through feature
+endif::[]
+to serve the image to the client. By default, the image blobs are
+mirrored locally by the registry. As a result, they can be pulled more quickly
+the next time they are needed. The flag also allows for pulling from
+insecure registries without a need to supply `--insecure-registry` to the Docker
+daemon as long as the image stream has an xref:insecure-registries[insecure annotation]
+or the tag has an xref:insecure-tag-import-policy[insecure import policy].
+
+[[tag-naming]]
+=== Recommended Tagging Conventions
+
+Images evolve over time and their tags reflect this. An image tag always points
+to the latest image built.
+
+If there is too much information embedded in a tag name (for example,
+`v2.0.1-may-2016`), the tag points to just one revision of an image and is
+never updated. Using default image pruning options, such an image is never
+removed.
+ifdef::openshift-origin,openshift-enterprise[]
+In very large clusters, the schema of creating new tags for every revised image
+could eventually fill up the etcd datastore with excess tag metadata for images
+that are long outdated.
+endif::[]
+
+Instead, if the tag is named `v2.0`, more image revisions are more likely. This
+results in longer
+xref:../architecture/core_concepts/builds_and_image_streams.adoc#image-stream-tag[tag history] and, therefore, the image pruner is more likely to remove old and unused images.
+ifdef::openshift-origin,openshift-enterprise[]
+Refer to xref:../admin_guide/pruning_resources.adoc#pruning-images[Pruning Images] for more information.
+endif::[]
+
+Although tag naming convention is up to you, here are a few examples in the
+format `<image_name>:<image_tag>`:
+
+.Image Tag Naming Conventions
+[width="50%",frame="topbot",options="header"]
+|===
+|Description |Example
+
+|Revision
+|`myimage:v2.0.1`
+
+|Architecture
+|`myimage:v2.0-x86_64`
+
+|Base image
+|`myimage:v1.2-centos7`
+
+|Latest (potentially unstable)
+|`myimage:latest`
+
+|Latest stable
+|`myimage:stable`
+|===
+
+If you require dates in tag names, periodically inspect old and unsupported
+images and `istags` and remove them. Otherwise, you might experience increasing
+resource usage caused by old images.
+
+[[tag-removal]]
+=== Removing Tags from Image Streams
+To remove a tag completely from an image stream run:
+
+----
+$ oc delete istag/ruby:latest
+----
+
+or:
+
+----
+$ oc tag -d ruby:latest
+----
+
+[[referencing-images-in-image-streams]]
+=== Referencing Images in Image Streams
+
+Images can be referenced in image streams using the following reference types:
+
+- An `*ImageStreamTag*` is used to reference or retrieve an image for a given
+image stream and tag. It uses the following convention for its name:
++
+----
+<image_stream_name>:<tag>
+----
+
+- An `*ImageStreamImage*` is used to reference or retrieve an image for a given
+image stream and image name. It uses the following convention for its name:
++
+----
+<image_stream_name>@<id>
+----
++
+The `<id>` is an immutable identifier for a specific image, also called a
+digest.
+
+- A `*DockerImage*` is used to reference or retrieve an image for a given external
+registry. It uses standard Docker _pull specification_ for its name, e.g.:
++
+----
+openshift/ruby-20-centos7:2.0
+----
++
+[NOTE]
+====
+When no tag is specified, it is assumed the *latest* tag is used.
+====
++
+You can also reference a third-party registry:
++
+----
+registry.redhat.io/rhel7:latest
+----
++
+Or an image with a digest:
++
+----
+centos/ruby-22-centos7@sha256:3a335d7d8a452970c5b4054ad7118ff134b3a6b50a2bb6d0c07c746e8986b28e
+----
+
+When viewing example image stream definitions, such as the
+https://github.com/openshift/origin/blob/master/examples/image-streams/image-streams-centos7.json[example
+CentOS image streams], you may notice they contain definitions of
+`*ImageStreamTag*` and references to `*DockerImage*`, but nothing related to
+`*ImageStreamImage*`.
+
+This is because the `*ImageStreamImage*` objects are automatically created in
+{product-title} whenever you import or tag an image into the image stream. You
+should never have to explicitly define an `*ImageStreamImage*` object in any
+image stream definition that you use to create image streams.
+
+You can view an image's object definition by retrieving an `*ImageStreamImage*`
+definition using the image stream name and ID:
+
+----
+$ oc get -o yaml --export isimage <image_stream_name>@<id>
+----
+
+[NOTE]
+====
+You can find valid `<id>` values for a given image stream by running:
+
+----
+$ oc describe is <image_stream_name>
+----
+====
+
+For example, from the *ruby* image stream asking for the `*ImageStreamImage*`
+with the name and ID of *ruby@3a335d7*:
+
+.Definition of an Image Object Retrieved via `ImageStreamImage`
+
+----
+$ oc get -o yaml --export isimage ruby@3a335d7
+
+apiVersion: v1
+image:
+  dockerImageLayers:
+  - name: sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4
+    size: 0
+  - name: sha256:ee1dd2cb6df21971f4af6de0f1d7782b81fb63156801cfde2bb47b4247c23c29
+    size: 196634330
+  - name: sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4
+    size: 0
+  - name: sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4
+    size: 0
+  - name: sha256:ca062656bff07f18bff46be00f40cfbb069687ec124ac0aa038fd676cfaea092
+    size: 177723024
+  - name: sha256:63d529c59c92843c395befd065de516ee9ed4995549f8218eac6ff088bfa6b6e
+    size: 55679776
+  dockerImageMetadata:
+    Architecture: amd64
+    Author: SoftwareCollections.org <sclorg@redhat.com>
+    Config:
+      Cmd:
+      - /bin/sh
+      - -c
+      - $STI_SCRIPTS_PATH/usage
+      Entrypoint:
+      - container-entrypoint
+      Env:
+      - PATH=/opt/app-root/src/bin:/opt/app-root/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      - STI_SCRIPTS_URL=image:///usr/libexec/s2i
+      - STI_SCRIPTS_PATH=/usr/libexec/s2i
+      - HOME=/opt/app-root/src
+      - BASH_ENV=/opt/app-root/etc/scl_enable
+      - ENV=/opt/app-root/etc/scl_enable
+      - PROMPT_COMMAND=. /opt/app-root/etc/scl_enable
+      - RUBY_VERSION=2.2
+      ExposedPorts:
+        8080/tcp: {}
+      Image: d9c3abc5456a9461954ff0de8ae25e0e016aad35700594714d42b687564b1f51
+      Labels:
+        build-date: 2015-12-23
+        io.k8s.description: Platform for building and running Ruby 2.2 applications
+        io.k8s.display-name: Ruby 2.2
+        io.openshift.builder-base-version: 8d95148
+        io.openshift.builder-version: 8847438ba06307f86ac877465eadc835201241df
+        io.openshift.s2i.scripts-url: image:///usr/libexec/s2i
+        io.openshift.tags: builder,ruby,ruby22
+        io.s2i.scripts-url: image:///usr/libexec/s2i
+        license: GPLv2
+        name: CentOS Base Image
+        vendor: CentOS
+      User: "1001"
+      WorkingDir: /opt/app-root/src
+    ContainerConfig: {}
+    Created: 2016-01-26T21:07:27Z
+    DockerVersion: 1.8.2-el7
+    Id: 57b08d979c86f4500dc8cad639c9518744c8dd39447c055a3517dc9c18d6fccd
+    Parent: d9c3abc5456a9461954ff0de8ae25e0e016aad35700594714d42b687564b1f51
+    Size: 430037130
+    apiVersion: "1.0"
+    kind: DockerImage
+  dockerImageMetadataVersion: "1.0"
+  dockerImageReference: centos/ruby-22-centos7@sha256:3a335d7d8a452970c5b4054ad7118ff134b3a6b50a2bb6d0c07c746e8986b28e
+  metadata:
+    creationTimestamp: 2016-01-29T13:17:45Z
+    name: sha256:3a335d7d8a452970c5b4054ad7118ff134b3a6b50a2bb6d0c07c746e8986b28e
+    resourceVersion: "352"
+    uid: af2e7a0c-c68a-11e5-8a99-525400f25e34
+kind: ImageStreamImage
+metadata:
+  creationTimestamp: null
+  name: ruby@3a335d7
+  namespace: openshift
+  selflink: /oapi/v1/namespaces/openshift/imagestreamimages/ruby@3a335d7
+----
+
+ifdef::openshift-enterprise,openshift-origin[]
+[[using-is-with-k8s]]
+== Using Image Streams with Kubernetes Resources
+
+Image streams, being {product-title} native resources, work out of the box with
+all the rest of native resources available in {product-title}, such as
+xref:../dev_guide/builds/index.adoc#dev-guide-how-builds-work[builds] or
+xref:../dev_guide/deployments/basic_deployment_operations.adoc#dev-guide-basic-deployment-operations[deployments].
+Currently, it is also possible to make them work with native Kubernetes
+resources, such as xref:../dev_guide/jobs.adoc#dev-guide-jobs[jobs],
+xref:../architecture/core_concepts/deployments.adoc#replication-controllers[replication
+controllers], replica sets or
+ifdef::openshift-enterprise,openshift-origin[]
+xref:../dev_guide/deployments/kubernetes_deployments.adoc#dev-guide-kubernetes-deployments-support[Kubernetes
+deployments].
+
+The cluster administrator
+xref:../admin_guide/image_policy.adoc#admin-guide-image-policy[configures
+exactly what resources] can be used.
+
+endif::[]
+ifdef::openshift-online,openshift-dedicated[]
+Kubernetes deployments.
+endif::[]
+
+When enabled, it is possible to put a reference to an image stream in the
+`*image*` field of a resource. When using this feature, it is only possible to
+reference image streams that reside in the same project as the resource. The
+image stream reference must consist of a single segment value, for example
+`*ruby:2.4*`, where `*ruby*` is the name of an image stream that has a tag named
+`*2.4*` and resides in the same project as the resource making the reference.
+
+There are two ways to enable this:
+
+. Enabling image stream resolution on a specific resource. This allows only this
+  resource to use the image stream name in the image field.
+. Enabling image stream resolution on an image stream. This allows all
+  resources pointing to this image stream to use it in the image field.
+
+Both of these operations can be done using `oc set image-lookup`. For example,
+the following command allows all resources to reference the image stream named `mysql`:
+
+----
+$ oc set image-lookup mysql
+----
+
+This sets the `*Imagestream.spec.lookupPolicy.local*` field to true.
+
+.Image stream with image lookup enabled
+
+----
+apiVersion: v1
+kind: ImageStream
+metadata:
+  annotations:
+    openshift.io/display-name: mysql
+  name: mysql
+  namespace: myproject
+spec:
+  lookupPolicy:
+    local: true
+----
+
+When enabled, the behavior is enabled for all tags within the image stream.
+
+You can query the image streams and see if the option is set using:
+
+----
+$ oc set image-lookup
+----
+
+You can also enable image lookup on a specific resource. This
+command allows the Kubernetes deployment named `mysql` to use image streams:
+
+----
+$ oc set image-lookup deploy/mysql
+----
+
+This sets the `*alpha.image.policy.openshift.io/resolve-names*` annotation
+on the deployment.
+
+.Deployment with image lookup enabled
+
+----
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+  namespace: myproject
+spec:
+  replicas: 1
+  template:
+    metadata:
+      annotations:
+        alpha.image.policy.openshift.io/resolve-names: '*'
+    spec:
+      containers:
+      - image: mysql:latest
+        imagePullPolicy: Always
+        name: mysql
+----
+
+To disable image lookup, pass `*--enabled=false*`:
+
+----
+$ oc set image-lookup deploy/mysql --enabled=false
+----
+endif::openshift-enterprise,openshift-origin[]
+ifdef::openshift-origin,openshift-online,openshift-enterprise,openshift-dedicated[]
+[[image-pull-policy]]
+== Image Pull Policy
+
+Each container in a pod has a container image. Once you have created an image and
+pushed it to a registry, you can then refer to it in the pod.
+
+When {product-title} creates containers, it uses the container's
+`*imagePullPolicy*` to determine if the image should be pulled prior to starting
+the container. There are three possible values for `*imagePullPolicy*`:
+
+- `*Always*` - always pull the image.
+- `*IfNotPresent*` - only pull the image if it does not already exist on the node.
+- `*Never*` - never pull the image.
+
+If a container's `*imagePullPolicy*`
+parameter is not specified, {product-title} sets it based on the image's tag:
+
+. If the tag is *latest*, {product-title} defaults `*imagePullPolicy*` to `*Always*`.
+. Otherwise, {product-title} defaults `*imagePullPolicy*` to `*IfNotPresent*`.
+endif::[]
+
+[[accessing-the-internal-registry]]
+== Accessing the Internal Registry
+
+You can access {product-title}'s internal registry directly to push or pull
+images. For example, this could be helpful if you wanted to
+xref:creating-an-image-stream-by-manually-pushing-an-image[create an image
+stream by manually pushing an image], or just to `docker pull` an image
+directly.
+
+ifdef::openshift-online[]
+OpenShift Online gives developers a hands-on preview of the OpenShift platform
+in a hosted environment that includes access to an internal registry.
+endif::[]
+
+The internal registry authenticates using the same
+xref:../architecture/additional_concepts/authentication.adoc#api-authentication[tokens]
+as the {product-title} API. To perform a `docker login` against the internal
+registry, you can choose any user name and email, but the password must be a
+valid {product-title} token.
+
+To log into the internal registry:
+
+. Log in to {product-title}:
++
+----
+$ oc login
+----
+
+. Get your access token:
++
+----
+$ oc whoami -t
+----
+
+. Log in to the internal registry using the token. You must have *docker*
+installed on your system:
++
+----
+$ docker login -u <user_name> -e <email_address> \
+ifdef::openshift-origin,openshift-enterprise,openshift-dedicated[]
+    -p <token_value> <registry_server>:<port>
+endif::[]
+ifdef::openshift-online[]
+    -p <token_value> https://registry.<clusterID>.openshift.com
+endif::[]
+----
++
+[NOTE]
+====
+Contact your cluster administrator if you do not know the registry IP or host
+name and port to use.
+====
+
+In order to pull an image, the authenticated user must have `get` rights on the
+requested `imagestreams/layers`. In order to push an image, the authenticated
+user must have `update` rights on the requested `imagestreams/layers`.
+
+By default, all service accounts in a project have rights to pull any image in
+the same project, and the *builder* service account has rights to push any image
+in the same project.
+
+ifdef::openshift-origin,openshift-enterprise,openshift-dedicated[]
+[[managing-images-listing-repositories]]
+=== Listing repositories
+
+Listing of repositories, or image stream names, is supported by the
+`/v2/_catalog` endpoint.
+
+The only requirement is that the authenticated user must have `list` rights on
+the `imagestreams` in the whole cluster.
+
+To grant a permission to list image streams to a user, run:
+----
+$ oc adm policy add-cluster-role-to-user registry-viewer user
+----
+
+To list repositories:
+----
+$ oc login -u user
+$ curl -v -u unused:$(oc whoami -t) https://<registry_server>:<port>/v2/_catalog?n=100
+----
+
+[IMPORTANT]
+====
+This API call is very expensive for a high number of image streams in the cluster.
+It is recommend to use
+ifdef::openshift-enterprise,openshift-dedicated[]
+pagination
+endif::openshift-enterprise,openshift-dedicated[]
+ifdef::openshift-origin[]
+link:https://github.com/docker/distribution/blob/master/docs/spec/api.md#pagination[pagination]
+endif::openshift-origin[]
+instead of listing all image streams.
+====
+endif::openshift-origin,openshift-enterprise,openshift-dedicated[]
+
+ifdef::openshift-origin,openshift-online,openshift-enterprise,openshift-dedicated[]
+[[using-image-pull-secrets]]
+== Using Image Pull Secrets
+
+xref:../architecture/infrastructure_components/image_registry.adoc#architecture-infrastructure-components-image-registry[Docker
+registries] can be secured to prevent unauthorized parties from accessing
+certain images. If you are xref:accessing-the-internal-registry[using {product-title}'s
+internal registry] and are pulling from image streams located in the same
+project, then your pod's service account should already have the correct
+permissions and no additional action should be required.
+
+However, for other scenarios, such as referencing images across {product-title}
+projects or from secured registries, then additional configuration steps are
+required. The following sections detail these scenarios and their required
+steps.
+
+[[allowing-pods-to-reference-images-across-projects]]
+=== Allowing Pods to Reference Images Across Projects
+
+When using the internal registry, to allow pods in *project-a* to reference
+images in *project-b*, a service account in *project-a* must be bound to the
+`system:image-puller` role in *project-b*:
+
+----
+$ oc policy add-role-to-user \
+    system:image-puller system:serviceaccount:project-a:default \
+    --namespace=project-b
+----
+
+After adding that role, the pods in *project-a* that reference the default
+service account is able to pull images from *project-b*.
+
+To allow access for any service account in *project-a*, use the group:
+
+----
+$ oc policy add-role-to-group \
+    system:image-puller system:serviceaccounts:project-a \
+    --namespace=project-b
+----
+
+[[allowing-pods-to-reference-images-from-other-secured-registries]]
+=== Allowing Pods to Reference Images from Other Secured Registries
+
+The *_.dockercfg_* file (or *_$HOME/.docker/config.json_* for newer Docker
+clients) is a Docker credentials file that stores your information if you have
+previously logged into a secured or insecure registry.
+
+To pull a secured container image that is not from {product-title}'s internal
+registry, you must create a _pull secret_ from your Docker credentials and add
+it to your service account.
+
+If you already have a *_.dockercfg_* file for
+the secured registry, you can create a secret from that file by running:
+
+----
+$ oc create secret generic <pull_secret_name> \
+    --from-file=.dockercfg=<path/to/.dockercfg> \
+    --type=kubernetes.io/dockercfg
+----
+
+Or if you have a *_$HOME/.docker/config.json_* file:
+
+----
+$ oc create secret generic <pull_secret_name> \
+    --from-file=.dockerconfigjson=<path/to/.docker/config.json> \
+    --type=kubernetes.io/dockerconfigjson
+----
+
+If you do not already have a Docker credentials file for the secured registry,
+you can create a secret by running:
+
+----
+$ oc create secret docker-registry <pull_secret_name> \
+    --docker-server=<registry_server> \
+    --docker-username=<user_name> \
+    --docker-password=<password> \
+    --docker-email=<email>
+----
+
+To use a secret for pulling images for pods, you must add the secret to your
+service account. The name of the service account in this example should match
+the name of the service account the pod uses; *default* is the default
+service account:
+
+----
+$ oc secrets link default <pull_secret_name> --for=pull
+----
+
+To use a secret for pushing and pulling build images, the secret must be
+mountable inside of a pod. You can do this by running:
+
+----
+$ oc secrets link builder <pull_secret_name>
+----
+endif::openshift-origin,openshift-online,openshift-enterprise,openshift-dedicated[]
+
+[[pulling-private-registries-delegated-auth]]
+==== Pulling from Private Registries with Delegated Authentication
+
+A private registry can delegate authentication to a separate service. In these
+cases, image pull secrets must be defined for both the authentication and
+registry endpoints.
+
+[NOTE]
+====
+Third-party images in the Red Hat Container Catalog are served from the Red Hat
+Connect Partner Registry (`registry.connect.redhat.com`). This registry
+delegates authentication to `sso.redhat.com`, so the following procedure
+applies.
+====
+
+. Create a secret for the delegated authentication server:
++
+----
+$ oc create secret docker-registry \
+    --docker-server=sso.redhat.com \
+    --docker-username=developer@example.com \
+    --docker-password=******** \
+    --docker-email=unused \
+    redhat-connect-sso
+
+secret/redhat-connect-sso
+----
++
+. Create a secret for the private registry:
++
+----
+$ oc create secret docker-registry \
+    --docker-server=privateregistry.example.com \
+    --docker-username=developer@example.com \
+    --docker-password=******** \
+    --docker-email=unused \
+    private-registry
+
+secret/private-registry
+----
+
+[NOTE]
+====
+The Red Hat Connect Partner Registry (`registry.connect.redhat.com`) does not
+accept the auto-generated `dockercfg` secret type
+(*link:https://bugzilla.redhat.com/show_bug.cgi?id=1476330[BZ#1476330]*). A
+generic file-based secret must be created using the generated file from a
+`docker login` command:
+
+----
+$ docker login registry.connect.redhat.com --username developer@example.com
+
+Password: *************
+Login Succeeded
+
+$ oc create secret generic redhat-connect --from-file=.dockerconfigjson=.docker/config.json
+
+$ oc secrets link default redhat-connect --for=pull
+----
+====
+
+[[importing-tag-and-image-metadata]]
+== Importing Tag and Image Metadata
+
+An image stream can be configured to import tag and image metadata from an image
+repository in an external container image registry. You can do this using a few
+different methods.
+
+- You can manually import tag and image information with the `oc import-image`
+command using the `--from` option:
++
+----
+$ oc import-image <image_stream_name>[:<tag>] --from=<docker_image_repo> --confirm
+----
++
+For example:
++
+----
+$ oc import-image my-ruby --from=docker.io/openshift/ruby-20-centos7 --confirm
+The import completed successfully.
+
+Name:			my-ruby
+Created:		Less than a second ago
+Labels:			<none>
+Annotations:		openshift.io/image.dockerRepositoryCheck=2016-05-06T20:59:30Z
+Docker Pull Spec:	172.30.94.234:5000/demo-project/my-ruby
+
+Tag	Spec					Created			PullSpec							Image
+latest	docker.io/openshift/ruby-20-centos7	Less than a second ago	docker.io/openshift/ruby-20-centos7@sha256:772c5bf9b2d1e8...	<same>
+----
++
+You can also add the `--all` flag to import all tags for the image instead of
+just *latest*.
+
+-  Like most objects in {product-title}, you can also write and save a JSON or YAML
+definition to a file then create the object using the CLI. Set the
+`*spec.dockerImageRepository*` field to the Docker pull spec for the image:
++
+----
+apiVersion: "v1"
+kind: "ImageStream"
+metadata:
+  name: "my-ruby"
+spec:
+  dockerImageRepository: "docker.io/openshift/ruby-20-centos7"
+----
++
+Then create the object:
++
+----
+$ oc create -f <file>
+----
+
+When you create an image stream that references an image in an external Docker
+registry, {product-title} communicates with the external registry within a short
+amount of time to get up to date information about the image.
+
+After the tag and image metadata is synchronized, the image stream object would
+look similar to the following:
+
+----
+apiVersion: v1
+kind: ImageStream
+metadata:
+  name: my-ruby
+  namespace: demo-project
+  selflink: /oapi/v1/namespaces/demo-project/imagestreams/my-ruby
+  uid: 5b9bd745-13d2-11e6-9a86-0ada84b8265d
+  resourceVersion: '4699413'
+  generation: 2
+  creationTimestamp: '2016-05-06T21:34:48Z'
+  annotations:
+    openshift.io/image.dockerRepositoryCheck: '2016-05-06T21:34:48Z'
+spec:
+  dockerImageRepository: docker.io/openshift/ruby-20-centos7
+  tags:
+    -
+      name: latest
+      annotations: null
+      from:
+        kind: DockerImage
+        name: 'docker.io/openshift/ruby-20-centos7:latest'
+      generation: 2
+      importPolicy: {  }
+status:
+  dockerImageRepository: '172.30.94.234:5000/demo-project/my-ruby'
+  tags:
+    -
+      tag: latest
+      items:
+        -
+          created: '2016-05-06T21:34:48Z'
+          dockerImageReference: 'docker.io/openshift/ruby-20-centos7@sha256:772c5bf9b2d1e8e80742ed75aab05820419dc4532fa6d7ad8a1efddda5493dc3'
+          image: 'sha256:772c5bf9b2d1e8e80742ed75aab05820419dc4532fa6d7ad8a1efddda5493dc3'
+          generation: 2
+----
+
+You can set a tag to query external registries at a scheduled interval to
+synchronize tag and image metadata by setting the `--scheduled=true` flag with
+the `oc tag` command as mentioned in xref:adding-tag[Adding Tags to Image
+Streams].
+
+Alternatively, you can set `*importPolicy.scheduled*` to *true* in the tag's
+definition:
+
+----
+apiVersion: v1
+kind: ImageStream
+metadata:
+  name: ruby
+spec:
+  tags:
+  - from:
+      kind: DockerImage
+      name: openshift/ruby-20-centos7
+    name: latest
+    importPolicy:
+      scheduled: true
+----
+
+[[insecure-registries]]
+=== Importing Images from Insecure Registries
+
+An image stream can be configured to import tag and image metadata from insecure
+image registries, such as those signed with a self-signed certificate or using
+plain HTTP instead of HTTPS.
+
+To configure this, add the `*openshift.io/image.insecureRepository*` annotation
+and set it to *true*. This setting bypasses certificate validation when
+connecting to the registry:
+
+[source,yaml]
+----
+kind: ImageStream
+apiVersion: v1
+metadata:
+  name: ruby
+  annotations:
+    openshift.io/image.insecureRepository: "true" <1>
+  spec:
+    dockerImageRepository: my.repo.com:5000/myimage
+----
+<1> Set the `*openshift.io/image.insecureRepository*` annotation to *true*
+
+[IMPORTANT]
+====
+This option instructs integrated registry to fall back to an insecure transport
+for any external image tagged in the image stream when serving it, which is
+dangerous. If possible, avoid this risk by
+xref:insecure-tag-import-policy[marking just an `istag` as insecure].
+====
+
+ifdef::openshift-enterprise,openshift-origin[]
+[IMPORTANT]
+====
+The above definition only affects importing tag and image metadata. For this
+image to be used in the cluster (e.g., to be able to do a `docker pull`), one of
+the following must be true:
+
+. Each node has Docker configured with the `--insecure-registry` flag matching the
+registry part of the `dockerImageRepository`. See
+xref:../install/host_preparation.adoc#install-config-install-host-preparation[Host
+Preparation] for more information.
+
+. Each `istag` specification must have `referencePolicy.type` set to `Local`. See
+xref:reference-policy[Reference Policy] for more information.
+====
+endif::[]
+
+[[imagestream-tag-policies]]
+==== Image Stream Tag Policies
+
+[[insecure-tag-import-policy]]
+===== Insecure Tag Import Policy
+The above annotation applies to all images and tags of a particular
+`ImageStream`. For a finer-grained control, policies may be set on
+xref:../architecture/core_concepts/builds_and_image_streams.adoc#image-stream-tag[`istags`].
+Set `importPolicy.insecure` in the tag's definition to `true` to allow a
+fall-back to insecure transport just for images under this tag.
+
+[NOTE]
+====
+The fall-back to insecure transport for an image under particular `istag` is
+enabled either when the image stream is annotated as insecure or the `istag`
+has insecure import policy. The `importPolicy.insecure`` set to `false` can not
+override the image stream annotation.
+====
+
+[[reference-policy]]
+===== Reference Policy
+
+The Reference Policy allows you to specify from where resources that reference
+this image stream tag pulls the image. It applies to only images that you import
+from external registries. There are two options to choose from: `Local` and
+`Source`.
+
+The `Source` policy instructs clients to pull directly from the source registry
+of the image. The integrated registry is not involved unless the image is
+managed by the cluster. (It is not an external image.)
+
+The `Local` policy instructs clients to always pull from the integrated
+registry. This is useful if you want to pull from external insecure registries
+without modifying Docker daemon settings. This is the default policy.
+
+This policy only affects the use of the image stream tag. Components or
+operations that directly reference or pull the image using its external registry
+location is not redirected to the internal registry.
+
+ifdef::openshift-enterprise,openshift-origin[]
+The
+xref:../install_config/registry/extended_registry_configuration.adoc#middleware-repository-pullthrough[pull-through feature]
+of the registry serves the remote image to the client. This feature, which is
+on by default, must be enabled for the local reference policy to be used.
+Additionally, by default, all the blobs are mirrored for faster access later.
+endif::[]
+ifndef::openshift-enterprise,openshift-origin[]
+The pull-through feature of the registry serves the remote image to the client. This feature, which is
+on by default, must be enabled for the local reference policy to be used.
+Additionally, by default, all the blobs are mirrored for faster access later.
+endif::[]
+
+You can set the policy in a specification of image stream tag as
+`referencePolicy.type`.
+
+.Example of Insecure Tag with a Local Reference Policy
+
+[source,yaml]
+----
+kind: ImageStream
+apiVersion: v1
+metadata:
+  name: ruby
+  tags:
+  - from:
+      kind: DockerImage
+      name: my.repo.com:5000/myimage
+    name: mytag
+    importPolicy:
+      insecure: true <1>
+    referencePolicy:
+      type: Local <2>
+----
+<1> Set tag `mytag` to use an insecure connection to that registry.
+<2> Set tag `mytag` to use integrated registry for pulling external images. If
+the reference policy type is set to `Source`, clients fetch the image
+directly from `my.repo.com:5000/myimage`.
+
+ifdef::openshift-origin,openshift-online,openshift-enterprise,openshift-dedicated[]
+[[private-registries]]
+=== Importing Images from Private Registries
+
+An image stream can be configured to import tag and image metadata from private
+image registries, requiring authentication.
+
+To configure this, you need to create a xref:../dev_guide/secrets.adoc#dev-guide-secrets[secret],
+which is used to store your credentials. See
+xref:#allowing-pods-to-reference-images-from-other-secured-registries[Allowing Pods to Reference Images from Other Secured Registries]
+for instructions on creating a secret using `oc create secret` command.
+
+After the secret is configured, proceed with creating the new image stream or
+using the `oc import-image` command. During the import process, {product-title}
+picks up the secrets and provide them to the remote party.
+
+[NOTE]
+====
+When importing from an insecure registry, the registry URL defined in the secret must include the `:80` port
+suffix or the secret is not used when attempting to import from the registry.
+====
+
+[[trusting-registries]]
+=== Adding Trusted Certificates for External Registries
+
+If the registry you are importing from is using a certificate that is not signed
+by a standard certificate authority, you need to explicitly configure the
+system to trust the registry's certificate or signing authority. This can be
+done by adding the CA certificate or registry certificate to the host system
+running the registry import controller (typically the master node).
+
+You must add the certificate or CA certificate to `/etc/pki/tls/certs` or `/etc/pki/ca-trust`,
+respectively, on the host system. You also need to run the `update-ca-trust` command
+on Red Hat distributions followed by a restart of the master services to pick up
+the certificate changes.
+
+You can also point the registry import controller to another filesystem path for certificates
+by setting the `AdditionalTrustedCA` parameter in the xref:../install_config/master_node_configuration.adoc#master-config-image-policy-config[`Image Policy Configuration`] section of the master configuration file.
+
+[[importing-images-across-projects]]
+=== Importing Images Across Projects
+
+An image stream can be configured to import tag and image metadata from the
+internal registry, but from a different project. The recommended method for
+this is to use the `oc tag` command as shown in xref:adding-tag[Adding Tags to
+image streams]:
+
+----
+$ oc tag <source_project>/<image_stream>:<tag> <new_image_stream>:<new_tag>
+----
+
+Another method is to import the image from the other project manually using the
+pull spec:
+
+[WARNING]
+====
+The following method is strongly discouraged and should be used only if the
+former using `oc tag` is insufficient.
+====
+
+. First, add the necessary xref:../dev_guide/service_accounts.adoc#dev-guide-service-accounts[policy] to
+access the other project:
++
+----
+$ oc policy add-role-to-group \
+    system:image-puller \
+    system:serviceaccounts:<destination_project> \
+    -n <source_project>
+----
++
+This allows `<destination_project>` to pull images from `<source_project>`.
+
+. With the policy in place, you can import the image manually:
++
+----
+$ oc import-image <new_image_stream> --confirm \
+    --from=<docker_registry>/<source_project>/<image_stream>
+----
+endif::[]
+
+[[creating-an-image-stream-by-manually-pushing-an-image]]
+=== Creating an Image Stream by Manually Pushing an Image
+
+An image stream can also be automatically created by manually pushing an image
+to the internal registry. This is only possible when using an {product-title}
+internal registry.
+
+Before performing this procedure, the following must be satisfied:
+
+- The destination project you push to must already exist.
+- The user must be authorized to `{get, update} "imagestream/layers"` in that
+project. In addition, since the image stream does not already exist, the user
+must be authorized to `{create} "imagestream"` in that project.  If you are a project
+administrator, then you would have these permissions.
+
+[NOTE]
+====
+The *system:image-pusher* role does not grant permission to create new image streams,
+only to push images to existing image streams, so it cannot be used to push images
+to image streams that do not yet exist unless additional permissions are also granted to
+the user.
+====
+
+To create an image stream by manually pushing an image:
+
+. First, xref:accessing-the-internal-registry[log in to the internal registry].
+
+. Then, tag your image using the appropriate internal registry location. For
+example, if you had already pulled the *docker.io/centos:centos7* image locally:
++
+ifdef::openshift-enterprise[]
+----
+$ docker tag docker.io/centos:centos7 172.30.48.125:5000/test/my-image
+----
+
+. Finally, push the image to your internal registry. For example:
++
+----
+$ docker push 172.30.48.125:5000/test/my-image
+The push refers to a repository [172.30.48.125:5000/test/my-image] (len: 1)
+c8a648134623: Pushed
+2bf4902415e3: Pushed
+latest: digest: sha256:be8bc4068b2f60cf274fc216e4caba6aa845fff5fa29139e6e7497bb57e48d67 size: 6273
+----
+endif::openshift-enterprise[]
++
+ifdef::openshift-origin,openshift-dedicated,openshift-aro,openshift-online[]
+
+----
+$ docker tag docker.io/centos:centos7 https://registry.<clusterID>.openshift.com
+----
+
+. Finally, push the image to your internal registry. For example:
++
+----
+$ docker push https://registry.<clusterID>.openshift.com
+The push refers to a repository [https://registry.<clusterID>.openshift.com] (len: 1)
+c8a648134623: Pushed
+2bf4902415e3: Pushed
+latest: digest: sha256:be8bc4068b2f60cf274fc216e4caba6aa845fff5fa29139e6e7497bb57e48d67 size: 6273
+----
+endif::openshift-origin,openshift-dedicated,openshift-aro,openshift-online[]
+. Verify that the image stream was created:
++
+ifdef::openshift-enterprise[]
+----
+$ oc get is
+NAME       DOCKER REPO                        TAGS      UPDATED
+my-image   172.30.48.125:5000/test/my-image   latest    3 seconds ago
+----
+endif::openshift-enterprise[]
++
+ifdef::openshift-origin,openshift-dedicated,openshift-aro,openshift-online[]
+----
+$ oc get is
+NAME       DOCKER REPO                        TAGS      UPDATED
+my-image   172.30.48.125:5000/test/my-image   latest    3 seconds ago
+----
+endif::openshift-origin,openshift-dedicated,openshift-aro,openshift-online[]
+
+
+[[managing-images-mirror-registry-images]]
+== Transferring Images
+
+To move images from one container image registry to another, use the `oc image mirror`
+command. The images are streamed from registry to registry without being stored
+locally.
+
+For example, to copy an image from *Docker Hub* to the integrated registry use the
+following command:
+
+[source, bash]
+----
+$ oc image mirror docker.io/library/busybox:latest 172.30.0.0/16/myproject/toybox:latest
+----
+
+[IMPORTANT]
+====
+If you use `docker.io` in the source or destination you cannot omit `docker.io` and
+`library` components. And if you want to get the latest tag, do not omit `latest`.
+====
+
+It is possible to copy an image to several locations at once. To do this, you
+must specify several destinations:
+
+[source, bash]
+----
+$ oc image mirror 172.30.0.0/16/myproject/busybox:latest docker.io/myrepository/busybox:stable docker.io/myrepository/toybox:dev
+----
+
+[NOTE]
+====
+`oc image mirror` runs locally, not inside the {product-title} cluster. Therefore,
+`oc image mirror` must have access to the source and destination registry.
+====
+
+If the container image registry requires authentication to pull or push an image, you
+you need to log in manually, using the `docker login` command, before executing
+the `oc image mirror` command.  If you do not have access to a docker binary and daemon,
+such as because you are using the command inside a Jenkins agent image, you can 
+manually provide the `.docker/config.json` file containing valid credentials in the user's 
+home directory prior to invoking `oc image mirror`.
+
+[[triggering-updates-on-image-stream-changes]]
+== Triggering Updates on Image Stream Changes
+
+When an image stream tag is updated to point to a new image, {product-title} can automatically take action to roll the new image out to resources that were using the old image.  This is configured in different ways depending on the type of resource that is referencing the image stream tag.
+
+[[image-stream-openshift-resources]]
+=== OpenShift Resources
+OpenShift DeploymentConfigs and BuildConfigs can be automatically triggered by changes to ImageStreamTags.  The triggered action can be run using the new value of the image referenced by the updated ImageStreamTag.  For more details on using this capability see the documentation on xref:builds/triggering_builds.adoc#image-change-triggers[BuildConfig triggers] and xref:deployments/basic_deployment_operations.adoc#image-change-trigger[DeploymentConfig triggers].
+
+[[image-stream-kubernetes-resources]]
+=== Kubernetes Resources
+Unlike DeploymentConfigs and BuildConfigs, which include as part of their API definition a set of fields for controlling triggers, Kubernetes resources do not have fields for triggering. Instead, {product-title} uses annotations to allow users to request triggering. The annotation is defined as follows:
+
+----
+Key: image.openshift.io/triggers
+Value: array of triggers, where each item has the schema:
+[
+ {
+   "from" :{
+     "kind": "ImageStreamTag", // required, the resource to trigger from, must be ImageStreamTag
+     "name": "example:latest", // required, the name of an ImageStreamTag
+     "namespace": "myapp",     // optional, defaults to the namespace of the object
+   },
+   // required, JSON path to change
+   // Note that this field is limited today, and only accepts a very specific set
+   // of inputs (a JSON path expression that precisely matches a container by ID or index).
+   // For pods this would be "spec.containers[?(@.name='web')].image".
+   "fieldPath": "spec.template.spec.containers[?(@.name='web')].image",
+   // optional, set to true to temporarily disable this trigger.
+   "paused": "false"
+ },
+ ...
+]
+----
+
+When {product-title} sees one of the core Kubernetes resources that contains both a pod template (i.e, only CronJobs, Deployments, StatefulSets, DaemonSets, Jobs, ReplicaSets, ReplicationControllers, and Pods) and this annotation, it attempts to update the object using the image currently associated with the ImageStreamTag referenced by trigger.  The update is performed against the `fieldPath` specified.
+
+In the following example the trigger fires when the `example:latest` imagestream tag is updated.  Upon firing, the object's pod template image reference for the `web` container is updated with a new image value.  If the pod template is part of a Deployment definition, the change
+to the pod template automatically triggers a deployment, effectively rolling out the new image.
+
+----
+image.openshift.io/triggers=[{"from":{"kind":"ImageStreamTag","name":"example:latest"},"fieldPath":"spec.template.spec.containers[?(@.name='web')].image"}]
+----
+
+When adding an Image Trigger to Deployments, you can also use the `oc set triggers` command.  For example the following command adds an image change trigger to the Deployment named `example` such that when the `example:latest` image stream tag is updated, the `web` container inside the deployment updates with the new image value:
+
+----
+$ oc set triggers deploy/example --from-image=example:latest -c web
+----
+
+Unless the Deployment is paused, this pod template update automatically causes a deployment to occur with the new image value.
+
+[[writing-image-stream-definitions]]
+== Writing Image Stream Definitions
+
+You can define image streams by writing the image stream definition for the entire image stream. This allows you to distribute
+the definition to different clusters without running `oc` commands.
+
+An image stream definition specifies information about the image stream and the specific tags to be imported.
+
+.Definition of an Image Stream Object
+
+----
+apiVersion: v1
+kind: ImageStream
+metadata:
+  name: ruby
+  annotations:
+    openshift.io/display-name: Ruby <1>
+spec:
+  tags:
+    - name: '2.0' <2>
+      annotations:
+        openshift.io/display-name: Ruby 2.0 <3>
+        description: >- <4>
+          Build and run Ruby 2.0 applications on CentOS 7. For more information
+          about using this builder image, including OpenShift considerations,
+          see
+          https://github.com/sclorg/s2i-ruby-container/tree/master/2.0/README.md.
+        iconClass: icon-ruby <5>
+        sampleRepo: 'https://github.com/sclorg/ruby-ex.git' <6>
+        tags: 'builder,ruby' <7>
+        supports: 'ruby' <8>
+        version: '2.0' <9>
+      from:
+        kind: DockerImage <10>
+        name: 'docker.io/openshift/ruby-20-centos7:latest' <11>
+----
+<1> A brief, user-friendly name for the whole image stream.
+<2> The tag is referred to as the version. Tags appear in a drop-down menu.
+<3> A user-friendly name for this tag within the image stream. This should be brief
+and include version information when appropriate.
+<4> A description of the tag, which includes enough detail for users to
+ understand what the image is providing. It can include links to additional
+ instructions. Limit the description to a few sentences.
+<5> The icon to show for this tag. Pick from our existing
+link:https://rawgit.com/openshift/openshift-logos-icon/master/demo.html[logo
+icons] when possible. Icons from link:http://fontawesome.io/icons/[FontAwesome]
+and link:https://www.patternfly.org/styles/icons/[Patternfly] can also be used.
+Alternatively, provide icons through
+ifdef::openshift-enterprise,openshift-origin[]
+xref:../install_config/web_console_customization.adoc#loading-custom-scripts-and-stylesheets[CSS
+customizations]
+endif::[]
+ifdef::openshift-online,openshift-dedicated[]
+CSS customizations
+endif::[]
+that can be added to an {product-title} cluster that uses your
+image stream. You must specify an icon class that exists, or it prevents
+falling back to the generic icon.
+<6> A URL to a source repository that works with this builder image tag and results
+ in a sample running application.
+<7> Categories that the image stream tag is associated with. The builder tag is
+required for it to show up in the catalog. Add tags that associates it with one
+of the provided catalog categories. Refer to the `id` and `categoryAliases` in
+`CATALOG_CATEGORIES` in the console's
+link:https://github.com/openshift/origin-web-console/blob/master/app/scripts/constants.js[constants
+file]. The categories can also be
+ifdef::openshift-enterprise,openshift-origin[]
+xref:../install_config/web_console_customization.adoc#configuring-catalog-categories[customized]
+endif::[]
+ifdef::openshift-online,openshift-dedicated[]
+customized
+endif::[]
+for the whole cluster.
+<8> Languages this image supports. This value is used during `oc new-app` invocations to try to match potential
+builder images to the provided source repository.
+<9> Version information for this tag.
+<10> The type of object this image stream tag is referencing.  Valid values are: `DockerImage`, `ImageStreamTag`, and `ImageStreamImage`.
+<11> The object this image stream tag imports.
+
+For more information on the fields that can be defined in an `ImageStream`, see the xref:../rest_api/apis-image.openshift.io/v1.ImageStream.adoc#object-schema[Imagestream API] and the xref:../rest_api/apis-image.openshift.io/v1.ImageStreamTag.adoc#object-schema[ImagestreamTag API].

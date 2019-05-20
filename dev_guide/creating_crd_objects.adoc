@@ -1,0 +1,19 @@
+[[dev-guide-custom-resources]]
+= Creating an object from a custom resource definition
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:context: dev-guide-crd
+
+toc::[]
+
+
+include::modules/con_custom-resource-definition.adoc[leveloffset=+1]
+
+include::modules/proc_creating-crd-object.adoc[leveloffset=+1]
+
+include::modules/proc_manage-crd-object.adoc[leveloffset=+1]

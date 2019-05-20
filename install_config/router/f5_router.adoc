@@ -1,0 +1,349 @@
+[[install-config-router-f5]]
+= Using the F5 Router Plug-in
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+toc::[]
+
+
+== Overview
+
+[WARNING]
+====
+The F5 router plug-in will be deprecated in {product-title} version 3.11. The functionality of the F5 router plug-in is replaced in the F5 BIG-IP® Controller for OpenShift. For more information, see link:http://clouddocs.f5.com/containers/v2/openshift/[F5 BIG-IP Controller for OpenShift]. For information about migrating existing deployments from the F5 router plug-in to the BIG-IP Controller for OpenShift, see
+ link:http://clouddocs.f5.com/containers/v2/openshift/replace-f5-router.html[Replace the F5 Router with the F5 BIG-IP Controller for OpenShift].
+====
+
+The F5 router plug-in is provided as a container image and run as a pod, just
+like the
+xref:../../install_config/router/default_haproxy_router.adoc#install-config-router-default-haproxy[default
+HAProxy router].
+
+[IMPORTANT]
+====
+Support relationships between F5 and Red Hat provide a full scope of support for both models of 
+F5 integration, F5 router plug-in and the F5 BIG-IP Controller for OpenShift. If you are currently using the F5 router plug-in, Red Hat support will provide the initial support and work with F5 support if necessary. If you are currently using the F5 BIG-IP Controller for OpenShift, F5 will provide the inital support and work with Red Hat if necessary.
+====
+
+[[install-router-f5-prerequisites]]
+== Prerequisites and Supportability
+
+When deploying the F5 router plug-in, ensure you meet the following
+requirements:
+
+* A F5 host IP with:
+** Credentials for API access
+** SSH access via a private key
+* An F5 user with Advanced Shell access
+* A virtual server for HTTP routes:
+** _HTTP profile_ must be _http_.
+* A virtual server with HTTP profile routes:
+** _HTTP profile_ must be _http_
+** _SSL Profile (client)_ must be _clientssl_
+** _SSL Profile (server)_ must be _serverssl_
+* For edge integration (not recommended):
+** A working ramp node
+** A working tunnel to the ramp node
+* For native integration:
+** A host-internal IP capable of communicating with all nodes on the port 4789/UDP
+** The sdn-services add-on license installed on the F5 host.
+ifdef::openshift-origin[]
+* Ensure you have xref:../../install_config/router/index.adoc#creating-the-router-service-account[created the router service account].
+endif::[]
+
+The F5 router plug-in for {product-title} supports only the following *F5 BIG-IP* versions:
+
+* 11.x
+* 12.x
+
+The F5 BIG-IP Controller for OpenShift supports the {product-title} versions found in the link:https://clouddocs.f5.com/containers/v2/releases_and_versioning.html[F5 BIG-IP Controller for OpenShift releases and versioning]page in the F5 documentation.
+
+[IMPORTANT]
+====
+The following features are not supported with *F5 BIG-IP* using the F5 router plug-in:
+
+* Wildcard routes together with re-encrypt routes - you must supply a certificate and a key in the route. If you provide a certificate, a key, and a certificate authority (CA), the CA is never used.
+* A pool is created for all services, even for the ones with no associated route.
+* xref:../../admin_guide/idling_applications.adoc#admin-guide-idling-applications[Idling applications]
+* Unencrypted HTTP traffic in _redirect_ mode, with edge TLS termination. (`insecureEdgeTerminationPolicy: Redirect`)
+* Sharding, that is, having multiple `vservers` on the F5.
+* SSL cipher (`ROUTER_CIPHERS=modern/old`)
+* Customizing the endpoint health checks for time-intervals and the type of checks.
+* Serving F5 metrics by using a metrics server.
+* Specifying a different target port (`PreferPort`/`TargetPort`) rather than the ones specified in the service.
+* Customizing the source IP whitelists, that is, allowing traffic for a route only from specific IP addresses.
+* Customizing timeout values, such as `max connect time`, or `tcp FIN timeout`.
+* HA mode for the *F5 BIG-IP*.
+====
+
+[[f5-configuring-the-virtual-servers]]
+=== Configuring the Virtual Servers
+
+As a prerequisite to working with the F5 router plug-in, two
+virtual servers (one virtual server each for HTTP and HTTPS profiles,
+respectively) need to be set up in the *F5 BIG-IP* appliance.
+
+To set up a virtual server in the *F5 BIG-IP* appliance, follow the
+link:https://support.f5.com/kb/en-us/products/big-ip_ltm/manuals/product/ltm-basics-12-1-0/2.html[instructions
+from F5].
+
+While creating the virtual server, ensure the following settings are in place:
+
+* For the HTTP server, set the `ServicePort` to `'http'/80`.
+* For the HTTPS server, set the `ServicePort` to `'https'/443`.
+* In the basic configuration, set the HTTP profile to *_/Common/http_* for both of
+the virtual servers.
+* For the HTTPS server, create a default *client-ssl* profile and select it for the *SSL Profile (Client)*.
+** To create the default client SSL profile, follow the
+link:https://support.f5.com/csp/article/K13452[instructions from F5], especially
+the *Configuring the fallback (default) client SSL profile* section, which
+discusses that the certificate/key pair is the default that will be served in
+the case that custom certificates are not provided for a route or server name.
+
+[[deploying-the-f5-router]]
+== Deploying the F5 Router Plug-in
+
+[IMPORTANT]
+====
+The F5 router must be run in privileged mode, because route certificates are
+copied using the `scp` command:
+
+----
+$ oc adm policy remove-scc-from-user hostnetwork -z router
+$ oc adm policy add-scc-to-user privileged -z router
+----
+====
+
+Deploy the F5 router plug-in with the `oc adm router` command, but provide additional
+flags (or environment variables) specifying the following parameters for the *F5
+BIG-IP* host:
+
+[[f5-router-flags]]
+[cols="1,4"]
+|===
+|Flag |Description
+
+|`--type=f5-router`
+|Specifies to launch an F5 router plug-in instead of the default haproxy-router. (the default `--type` is
+*haproxy-router*).
+
+|`--external-host`
+|Specifies the *F5 BIG-IP* host's management interface's host name or IP
+address.
+
+|`--external-host-username`
+|Specifies the *F5 BIG-IP* user name (typically *admin*).
+The *F5 BIG-IP* user account must have access to the Advanced Shell (Bash) on the F5 BIG-IP system.
+
+|`--external-host-password`
+|Specifies the *F5 BIG-IP* password.
+
+|`--external-host-http-vserver`
+|Specifies the name of the F5 virtual server for HTTP
+connections. This must be configured by the user prior to launching the router pod.
+
+|`--external-host-https-vserver`
+|Specifies the name of the F5 virtual server for
+HTTPS connections. This must be configured by the user
+prior to launching the router pod.
+
+|`--external-host-private-key`
+|Specifies the path to the SSH private key file for the *F5 BIG-IP* host.
+Required to upload and delete key and certificate files for routes.
+
+|`--external-host-insecure`
+|A Boolean flag that indicates that the F5 router plug-in does not use strict certificate
+verification with the *F5 BIG-IP* host.
+
+|`--external-host-partition-path`
+|Specifies the *F5 BIG-IP®* xref:f5-router-partition-paths[partition path] (the default is */Common*).
+|===
+
+For example:
+
+ifdef::openshift-enterprise[]
+====
+----
+$ oc adm router \
+    --type=f5-router \
+    --external-host=10.0.0.2 \
+    --external-host-username=admin \
+    --external-host-password=mypassword \
+    --external-host-http-vserver=ose-vserver \
+    --external-host-https-vserver=https-ose-vserver \
+    --external-host-private-key=/path/to/key \
+    --host-network=false \
+    --service-account=router
+----
+====
+endif::[]
+ifdef::openshift-origin[]
+====
+----
+$ oc adm router \
+    --type=f5-router \
+    --external-host=10.0.0.2 \
+    --external-host-username=admin \
+    --external-host-password=mypassword \
+    --external-host-http-vserver=ose-vserver \
+    --external-host-https-vserver=https-ose-vserver \
+    --external-host-private-key=/path/to/key \
+    --host-network=false \
+    --service-account=router
+----
+====
+endif::[]
+
+As with the HAProxy router, the `oc adm router` command creates the service and
+deployment configuration objects, and thus the replication controllers and
+pod(s) in which the F5 router plug-in itself runs. The replication controller restarts
+the F5 router plug-in in case of crashes. Because the F5 router plug-in is watching routes,
+endpoints, and nodes and configuring *F5 BIG-IP* accordingly, running the F5
+router in this way, along with an appropriately configured *F5 BIG-IP*
+deployment, satisfies high-availability requirements.
+
+[[f5-router-partition-paths]]
+== F5 Router Plug-in Partition Paths
+Partition paths allow you to store your {product-title} routing configuration in
+a custom *F5 BIG-IP* administrative partition, instead of the default */Common*
+partition. You can use custom administrative partitions to secure *F5 BIG-IP*
+environments. This means that an {product-title}-specific configuration stored
+in *F5 BIG-IP* system objects reside within a logical container, allowing
+administrators to define access control policies on that specific administrative
+partition.
+
+See the
+link:https://support.f5.com/kb/en-us/products/big-ip_ltm/manuals/product/tmos_management_guide_10_0_0/tmos_partitions.html[*F5 BIG-IP* documentation] for more information about administrative partitions.
+
+To configure your {product-title} for partition paths:
+
+. Optionally, perform some cleaning steps:
+.. Ensure F5 is configured to be able to switch to the */Common* and */Custom* paths.
++
+.. Delete the static FDB of `vxlan5000`. See
+the
+link:https://support.f5.com/kb/en-us/products/big-ip_ltm/manuals/product/tmos-implementations-12-0-0/9.html[F5
+BIG-IP® documentation] for more information.
+
+. xref:f5-configuring-the-virtual-servers[Configure a virtual server] for the
+custom partition.
+
+. To specify a partition path, deploy the F5 router plug-in using the `--external-host-partition-path` flag:
++
+----
+$ oc adm router --external-host-partition-path=/OpenShift/zone1 ...
+----
+
+
+[[setting-up-f5-native-integration-with-openshift]]
+== Setting Up F5 Router Plug-in
+
+[NOTE]
+====
+This section reviews how to set up F5 native integration with {product-title}.
+The concepts of the F5 appliance and {product-title} connection and data flow of the F5
+router plug-in are discussed in the
+xref:../../architecture/networking/assembly_available_router_plugins.adoc#architecture-f5-native-integration[F5 Router Plug-in] section of the Routes topic.
+====
+
+[NOTE]
+====
+Only *F5 BIG-IP* appliance versions 11.x and 12.x work with the F5 router plug-in
+presented in this section. You also need sdn-services add-on license for the
+integration to work properly.
+For version 11.x, follow the instructions to set up a
+xref:../../install_config/routing_from_edge_lb.adoc#establishing-a-tunnel-using-a-ramp-node[_ramp
+node_].
+====
+
+
+With F5 router plug-in for {product-title}, you do not need to
+configure a ramp node for F5 to be able to reach the pods on the overlay network
+as created by OpenShift SDN.
+
+The F5 router plug-in pod needs to be launched with enough information so that it can
+successfully directly connect to pods.
+
+. Create a ghost `hostsubnet` on the {product-title} cluster:
++
+----
+$ cat > f5-hostsubnet.yaml << EOF
+{
+    "kind": "HostSubnet",
+    "apiVersion": "v1",
+    "metadata": {
+        "name": "openshift-f5-node",
+        "annotations": {
+        "pod.network.openshift.io/assign-subnet": "true",
+	"pod.network.openshift.io/fixed-vnid-host": "0"  <1>
+        }
+    },
+    "host": "openshift-f5-node",
+    "hostIP": "10.3.89.213"  <2>
+} EOF
+$ oc create -f f5-hostsubnet.yaml
+----
+<1> Make F5 global.
+<2> The internal IP of the F5 appliance.
+
+. Determine the subnet allocated for the ghost `hostsubnet` just created:
++
+----
+$ oc get hostsubnets
+NAME                    HOST                    HOST IP       SUBNET
+openshift-f5-node       openshift-f5-node       10.3.89.213   10.131.0.0/23
+openshift-master-node   openshift-master-node   172.17.0.2    10.129.0.0/23
+openshift-node-1        openshift-node-1        172.17.0.3    10.128.0.0/23
+openshift-node-2        openshift-node-2        172.17.0.4    10.130.0.0/23
+----
+
+. Check the `SUBNET` for the newly created `hostsubnet`. In this example,
+`10.131.0.0/23`.
+
+. Get the entire pod network’s CIDR:
++
+----
+$ oc get clusternetwork
+----
++
+This value will be something like `10.128.0.0/14`, noting the mask (`14` in
+this example).
+
+. To construct the gateway address, pick any IP address from the `hostsubnet`
+(for example, `10.131.0.5`). Use the mask of the pod network (`14`). The
+gateway address becomes: `10.131.0.5/14`.
+
+. Launch the F5 router plug-in pod, following xref:deploying-the-f5-router[these instructions].
+Additionally, allow the access to 'node' cluster resource for the service account and
+use the two new additional options for VXLAN native integration.
++
+----
+$ # Add policy to allow router to access nodes using the sdn-reader role
+$ oc adm policy add-cluster-role-to-user system:sdn-reader system:serviceaccount:default:router
+$ # Launch the F5 router plug-in pod with vxlan-gw and F5's internal IP as extra arguments
+$ #--external-host-internal-ip=10.3.89.213
+$ #--external-host-vxlan-gw=10.131.0.5/14
+$ oc adm router \
+    --type=f5-router \
+    --external-host=10.3.89.90 \
+    --external-host-username=admin \
+    --external-host-password=mypassword \
+    --external-host-http-vserver=ose-vserver \
+    --external-host-https-vserver=https-ose-vserver \
+    --external-host-private-key=/path/to/key \
+    --service-account=router \
+    --host-network=false \
+    --external-host-internal-ip=10.3.89.213 \
+    --external-host-vxlan-gw=10.131.0.5/14
+----
++
+[NOTE]
+====
+The `external-host-username` is a *F5 BIG-IP* user account with access to the Advanced Shell (Bash) on the F5 BIG-IP system.
+====

@@ -1,0 +1,372 @@
+[[release-notes-osd-product-updates]]
+= Latest Product Updates
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+toc::[]
+
+== Overview
+
+https://www.openshift.com/dedicated/[Red Hat {product-title}] provides managed, single-tenant OpenShift environments on the public cloud. Installed and managed by Red Hat, these clusters can provide additional resources as needed, use Red Hat JBoss® Middleware and partner services, integrate with an existing authentication system, and connect to a private datacenter.
+
+Red Hat {product-title} is a hosted service that provides
+developers and IT organizations with a cloud application platform for deploying
+new applications on secure, scalable resources with minimal configuration and
+management overhead. {product-title} supports a wide selection of
+programming languages and frameworks, such as Java, Ruby, and PHP.
+
+See https://www.openshift.com/dedicated[https://www.openshift.com/dedicated] for more information.
+
+[[osd-about-this-release]]
+== About This Update
+
+[NOTE]
+====
+Cluster upgrades to a new update of {product-title} are scheduled to begin soon,
+per recent Red Hat communications; customers can check the
+link:https://status-dedicated.openshift.com/access/login[{product-title} Status]
+page for their scheduled upgrade date. This topic has been updated to reflect
+the upcoming new features and changes.
+====
+
+The latest update of Red Hat {product-title} uses  link:https://docs.openshift.com/container-platform/3.9/release_notes/ocp_3_9_release_notes.html[Red Hat OpenShift Container Platform version 3.9], which is based on
+link:https://github.com/openshift/origin/releases/tag/v3.9.0[OpenShift Origin 3.9]. New features, changes, bug fixes, and known issues that
+pertain to the latest updates of {product-title} are included in this topic.
+
+[[osd-new-features-and-enhancements]]
+== New Features and Enhancements
+
+[[osd-dedicated-admin-updates]]
+=== Dedicated Administrator Updates
+
+[[osd-service-accounts]]
+==== Service Accounts
+A reserved project called *dedicated-admin* will be created and maintained on each cluster. Any service account created within this project will have *dedicated-admin* permissions by default. Only *dedicated-admin* users will be able to manage service accounts within this project.
+
+[[osd-oauthclientauthorizations]]
+==== Oauthclientauthorizations
+*dedicated-admin* users are now able to list and delete `oauthclientauthorizations`.
+
+[[osd-scheduler-statistics]]
+==== Scheduler statistics
+*dedicated-admin* users can now access scheduler statistics for each node by using the `oc describe node` command.
+
+[[osd-security]]
+=== Security
+
+[[osd-documented-private-public-key-configurations-and-crypto-levels]]
+==== Documented Private and Public Key Configurations and Crypto Levels
+
+While {product-title} is a secured-by-default implementation of Kubernetes,
+there is now documentation on what security protocols and ciphers are used.
+
+{product-title} leverages Transport Layer Security (TLS) cipher suites, JSON Web
+Algorithms (JWA) crypto algorithms, and offers external libraries such as The
+Generic Security Service Application Program Interface (GSSAPI) and libgpgme.
+
+link:https://docs.openshift.com/container-platform/3.9/architecture/index.html#arch-index-how-is-it-secured-tls[Private and public key configurations and Crypto levels] are now documented for {product-title}.
+
+[[osd-node-authorizer-node-restriction-admission-plug-in]]
+==== Node Authorizer and Node Restriction Admission Plug-in
+
+Pods can no longer try to gain information from secrets, configuration maps, PV,
+PVC, or API objects from other nodes.
+
+link:https://kubernetes.io/docs/admin/authorization/node/[Node authorizer]
+governs what APIs a kubelet can perform. Spanning read-, write-, and auth-related
+operations. In order for the admission controller to know the identity of the
+node to enforce the rules, nodes are provisioned with credentials that identify
+them with the user name `system:node:<nodename>` and group `system:nodes`.
+
+[[osd-networking]]
+=== Networking
+
+[[osd-support-our-own-haproxy-rpm-for-consumption-by-the-router]]
+==== Support Our Own HAProxy RPM for Consumption by the Router
+Route configuration changes and process upgrades performed under heaving load
+have typically required a stop and start sequence of certain services, causing
+temporary outages.
+
+In {product-title}, HAProxy 1.8 sees no difference between updates and
+upgrades; a new process is used with a new configuration, and the listening
+socket’s file descriptor is transferred from the old to the new process so the
+connection is never closed.  The change is seamless, and enables our ability to
+do things, like HTTP/2, in the future.
+
+[[osd-network-policy]]
+==== Network Policy
+Network Policy is now fully supported in {product-title} using 3.9.
+
+Network Policy is an optional plug-in specification of how selections of pods
+are allowed to communicate with each other and other network endpoints. It
+provides fine-grained network namespace isolation using labels and port
+specifications.
+
+`NetworkPolicies` can be created that define what traffic to allow to specified projects and pods.
+
+The allow-to-red policy example below specifies "all red pods in namespace `project-a` allow
+traffic from any pods in any namespace." This does not apply to the red pod in
+namespace `project-b` because `podSelector` only applies to the namespace in
+which it was applied.
+
+.Policy applied to project
+----
+kind: NetworkPolicy
+apiVersion: extensions/v1beta1
+metadata:
+  name: allow-to-red
+spec:
+  podSelector:
+    matchLabels:
+      type: red
+  ingress:
+  - {}
+----
+
+See
+link:https://docs.openshift.com/container-platform/3.9/admin_guide/managing_networking.html#admin-guide-networking-networkpolicy[Managing Networking] for more information.
+
+[[osd-hsts-policy-support]]
+==== HSTS Policy Support
+
+link:https://docs.openshift.com/container-platform/3.9/architecture/networking/routes.html#route-specific-annotations[HTTP Strict Transport Security (HSTS)] ensures all communication between the server and client is encrypted and
+that all sent and received responses are delivered to and received from the
+authenticated server.
+
+An HSTS policy is provided to the client via an HTTPS header (HSTS headers over
+HTTP are ignored) using an `haproxy.router.openshift.io/hsts_header` annotation
+to the route. When the Strict-Transport-Security response in the header is
+received by a client, it observes the policy until it is updated by another
+response from the host, or it times-out (`max-age=0`).
+
+Example using reencrypt route:
+
+. Create the pod/svc/route:
++
+----
+$ oc create -f https://example.com/test.yaml
+----
+
+. Set the Strict-Transport-Security header:
++
+----
+$ oc annotate route serving-cert haproxy.router.openshift.io/hsts_header="max-age=300;includeSubDomains;preload"
+----
+
+. Access the route using `https`:
++
+----
+$ curl --head https://$route -k
+
+   ...
+   Strict-Transport-Security: max-age=300;includeSubDomains;preload
+   ...
+----
+
+[[osd-master]]
+=== Master
+
+[[osd-statefulsets-daemonsets-deployments]]
+====  StatefulSets, DaemonSets, and Deployments Now Supported
+
+In {product-title}, statefulsets, daemonsets, and deployments are now stable,
+supported, and out of Technology Preview.
+
+[[osd-add-support-for-deployments-to-oc-status]]
+==== Add Support for Deployments to oc status
+
+The `oc status` command provides an overview of the current project. This
+provides similar output for upstream deployments as can be seen for downstream
+DeploymentConfigs, with a nested deployment set:
+
+----
+$ oc status
+In project My Project (myproject) on server https://127.0.0.1:8443
+
+svc/ruby-deploy - 172.30.174.234:8080
+  deployment/ruby-deploy deploys istag/ruby-deploy:latest <-
+    bc/ruby-deploy source builds https://github.com/sclorg/ruby-ex.git on istag/ruby-22-centos7:latest
+      build #1 failed 5 hours ago - bbb6701: Merge pull request #18 from durandom/master (Joe User <joeuser@users.noreply.github.com>)
+    deployment #2 running for 4 hours - 0/1 pods (warning: 53 restarts)
+    deployment #1 deployed 5 hours ago
+----
+
+Compare this to the output from {product-title} 3.7:
+
+----
+$ oc status
+In project dc-test on server https://127.0.0.1:8443
+
+svc/ruby-deploy - 172.30.231.16:8080
+  pod/ruby-deploy-5c7cc559cc-pvq9l runs test
+----
+
+[[osd-developer-experience]]
+=== Developer Experience
+
+[[osd-memory-usage-improvements]]
+==== Jenkins Memory Usage Improvements
+
+Previously, Jenkins worker pods would often consume too much or too little
+memory. Now, a startup script intelligently looks at pod limits, and environment
+variables are appropriately set to ensure limits are respected for spawned JVMs.
+
+[[osd-template-instantation-api]]
+==== Template Instantiation API
+
+Clients can now easily invoke a server API instead of relying on client logic.
+
+See link:https://docs.openshift.com/container-platform/3.9/rest_api/examples.html#template-instantiation[Template Instantiation] for more information.
+
+[[osd-chaining-builds]]
+==== Chaining Builds
+
+In {product-title} on 3.9,
+link:https://docs.openshift.com/container-platform/3.9/dev_guide/builds/advanced_build_operations.html#dev-guide-chaining-builds[Chaining Builds] is a better approach for producing runtime-only application images, and
+fully replaces the Extended Builds feature.
+
+Benefits of Chaining Builds include:
+
+* Supported by both Docker and Source-to-Image (S2I) build strategies, as well as
+combinations of the two, compared with S2I strategy only for Extended Builds.
+
+* No need to create and manage a new assemble-runtime script.
+
+* Easy to layer application components into any thin runtime-specific image.
+
+* Can build the application artifacts image anywhere.
+
+* Better separation of concerns between the step that produces the application
+artifacts and the step that puts them into an application image.
+
+[[osd-web-console]]
+=== Web Console
+
+[[osd-initial-experience]]
+==== Initial Experience
+
+{product-title} on 3.9 provides a better initial user experience with the Service
+Catalog. This includes:
+
+* A task-focused interface
+* Key call-outs
+* Unified search
+* Streamlined navigation
+
+The new user interface is designed to really streamline the getting started
+process, in addition to incorporating the new Service Catalog items. These Service Catalog items are not yet available in OpenShift Dedicated.
+
+[[osd-catalog-from-within-project-view]]
+==== Catalog from within Project View
+
+Quickly get to the catalog from within a project by clicking *Catalog* in the
+left navigation.
+
+image::3.9-console-catalog-tab.png[Catalog tab]
+
+[[osd-quickly-search-the-catalog]]
+==== Quickly Search the Catalog from within Project View
+
+To quickly find services from within project view, type in your search criteria.
+
+image::3.9-console-catalog-search.png[Search the catalog]
+
+[[osd-select-preferred-home-page]]
+==== Select Preferred Home Page
+
+You can now jump straight to certain pages after login. Access the menu from
+the account dropdown, choose your option, then log out, then log back in.
+
+image::3.9-console-set-custom-home-page.gif[Set preferred home page]
+
+[[osd-search-catalog]]
+==== Search Catalog
+
+{product-title} on 3.9 provides a simple way to quickly get what you want. The new
+Search Catalog user interface is designed to make it much easier to find items
+in a number of ways, making it even faster to find the items you are wanting to
+deploy.
+
+image::3.7-search-filter-catalog.gif[search catalog]
+
+[[osd-add-from-catalog]]
+==== Add from Catalog
+
+Provision a service from the catalog. Select the desired service and follow
+prompts for the desired project and configuration details.
+
+image::3.7-add-to-project-wizard-animated.gif[add to project]
+
+[[osd-connect-a-service]]
+==== Connect a Service
+Once a service is deployed, get coordinates to connect the application to it.
+
+The broker returns a secret, which is stored in the project for use. You are
+guided through a process to update the deployment to inject a secret.
+
+image::3.7-bind-mongodb-nodejs-at-creation.gif[connect a service]
+
+[[osd-include-templates-from-other-projects]]
+==== Include Templates from Other Projects
+
+Since templates are now served through a broker, there is now a way for you to
+deploy templates from other projects.
+
+Upload the template, then select the template from a project.
+
+image::3.7-add-to-project-options.png[Add to Project Options]
+
+[[osd-notifications]]
+==== Notifications
+Key notifications are now under a single UI element, the notification drawer.
+
+The bell icon is decorated when new notifications exist. You can mark all read,
+clear all, view all, or dismiss individual ones. Key notifications are
+represented with the level of information, warning, or error.
+
+image::3.7-notification-drawer.png[Notification drawer]
+
+[[ocp-37-improved-quota-warnings]]
+==== Improved Quota Warnings
+Quota notifications are now put in the notification drawer and are less intrusive.
+
+image::37-quota-warning.png[quota warning]
+
+There are now separate notifications for each quota type instead of one generic
+warning. When at quota and not over quota, this is displayed as an informative
+message. Usage and maximum is displayed in the message. You can mark *Don't Show
+Me Again* per quota type. Administrators can create custom messages to the quota
+warning.
+
+[[osd-support-for-envfrom]]
+==== Support for the EnvFrom Construct
+
+Anything with a pod template now supports the `EnvFrom` construct that lets you
+break down an entire configuration map or secret into environment variables without
+explicitly setting `env name` to  `key mappings`.
+
+[[osd-storage]]
+=== Storage
+
+==== OverlayFS Docker Storage Drivers Are Now Used
+
+OverlayFS docker storage drivers are now used instead of DeviceMapper. See
+link:https://docs.openshift.com/container-platform/3.9/scaling_performance/optimizing_storage.html#benefits-of-using-the-overlay-graph-driver[Benefits
+of Using the OverlayFS Versus DeviceMapper with SELinux] in the OpenShift
+Container Platform documentation for more details on this change.
+
+[[osd-notable-technical-changes]]
+== Notable Technical Changes
+
+OpenShift Container Platform 3.9 introduced several notable technical changes to {product-title}. Refer to the OpenShift Container Platform link:https://docs.openshift.com/container-platform/3.9/release_notes/ocp_3_9_release_notes.html#ocp-39-notable-technical-changes[3.9 Release Notes] for more information on technical changes to the underlying software.
+
+[[osd-bug-fixes]]
+== Bug Fixes
+
+Refer to the OpenShift Container Platform link:https://docs.openshift.com/container-platform/3.9/release_notes/ocp_3_9_release_notes.html#ocp-39-bug-fixes[3.9 Release Notes] for more information on bug fixes.

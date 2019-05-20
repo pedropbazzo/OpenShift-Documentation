@@ -1,0 +1,179 @@
+[[dev-guide-application-health]]
+= Application Health
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+
+toc::[]
+
+== Overview
+
+In software systems, components can become unhealthy due to transient issues
+(such as temporary connectivity loss), configuration errors, or problems with
+external dependencies. {product-title} applications have a number of options to
+detect and handle unhealthy containers.
+
+[[container-health-checks-using-probes]]
+
+== Container Health Checks Using Probes
+
+A probe is a Kubernetes action that periodically performs diagnostics on a
+running container. Currently, two types of probes exist, each serving a
+different purpose:
+
+[cols="1,4"]
+|===
+
+|Liveness Probe
+|A liveness probe checks if the container in which it is configured is still
+running. If the liveness probe fails, the kubelet kills the container, which
+will be subjected to its restart policy. Set a liveness check by configuring the
+`*template.spec.containers.livenessprobe*` stanza of a pod configuration.
+
+|Readiness Probe
+|A readiness probe determines if a container is ready to service requests. If
+the readiness probe fails a container, the endpoints controller ensures the
+container has its IP address removed from the endpoints of all services. A
+readiness probe can be used to signal to the endpoints controller that even
+though a container is running, it should not receive any traffic from a proxy.
+Set a readiness check by configuring the
+`*template.spec.containers.readinessprobe*` stanza of a pod configuration.
+
+|===
+
+The exact timing of a probe is controlled by two fields,
+both expressed in units of seconds:
+
+|====
+| Field | Description
+
+| `*initialDelaySeconds*`
+| How long to wait after the container starts to begin the probe.
+
+| `*timeoutSeconds*`
+| How long to wait for the probe to finish (default: `1`).
+If this time is exceeded, {product-title} considers the probe to have failed.
+
+|====
+
+Both probes can be configured in three ways:
+
+*HTTP Checks*
+
+The kubelet uses a web hook to determine the healthiness of the container. The
+check is deemed successful if the HTTP response code is between 200 and 399. The following is
+an example of a readiness check using the HTTP checks method:
+
+.Readiness HTTP check
+====
+----
+...
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: 8080
+  initialDelaySeconds: 15
+  timeoutSeconds: 1
+...
+----
+====
+
+A HTTP check is ideal for applications that return HTTP status codes
+when completely initialized.
+
+*Container Execution Checks*
+
+The kubelet executes a command inside the container. Exiting the check with
+status 0 is considered a success. The following is an example of a liveness
+check using the container execution method:
+
+.Liveness Container Execution Check
+====
+----
+...
+livenessProbe:
+  exec:
+    command:
+    - cat
+    - /tmp/health
+  initialDelaySeconds: 15
+...
+----
+====
+
+[NOTE]
+====
+The `timeoutSeconds` parameter has no effect on the readiness and liveness
+probes for Container Execution Checks. You can implement a timeout 
+inside the probe itself, as {product-title} cannot time out on an exec call into
+the container. One way to implement a timeout in a probe is by using the `timeout` parameter to run your
+liveness or readiness probe:
+
+----
+[...]
+       livenessProbe:
+        exec:
+          command:
+            - /bin/bash
+            - '-c'
+            - timeout 60 /opt/eap/bin/livenessProbe.sh <1>
+        timeoutSeconds: 1
+        periodSeconds: 10
+        successThreshold: 1
+        failureThreshold: 3
+[...] 
+----
+
+<1> Timeout value and path to the probe script.
+====
+
+*TCP Socket Checks*
+
+The kubelet attempts to open a socket to the container. The container is only
+considered healthy if the check can establish a connection. The following is an
+example of a liveness check using the TCP socket check method:
+
+.Liveness TCP Socket Check
+====
+----
+...
+livenessProbe:
+  tcpSocket:
+    port: 8080
+  initialDelaySeconds: 15
+  timeoutSeconds: 1
+...
+----
+====
+
+A TCP socket check is ideal for applications that do not start listening until
+initialization is complete.
+
+For more information on health checks, see the
+https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-probes/[Kubernetes
+documentation].
+
+////
+[[high-level-application-health-checks]]
+
+== High-level Application Health Checks
+
+Holistic notions of application health that cut across multiple components
+cannot be handled with container-scoped liveness checks. Having healthy and
+responsive system components in a distributed application, but in a system with
+overall unhealthy behavior, is possible. Administrators of distributed systems
+use health checks to test the behavior of the overall health of a system.
+
+A typical example is a script that performs a test transaction, exercising the
+components of the system together and verifying that the high-level system
+behavior in the context of the test transaction matches the expected behavior of
+a health system.
+
+{product-title} users can specify high-level health checks and control the
+health check methodology by specifying a script to run, and the action to be
+taken when a health check has a negative result by creating an event.
+////

@@ -1,0 +1,116 @@
+// This assembly is included in the following assemblies:
+//
+// * n/a
+
+[id='installing-operator-framework']
+= Installing the Operator Framework (Technology Preview)
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+:context: installing-operator-framework
+
+toc::[]
+
+{nbsp} +
+Red Hat has announced the
+link:https://coreos.com/blog/introducing-operator-framework[Operator Framework],
+an open source toolkit designed to manage Kubernetes native applications, called
+_Operators_, in a more effective, automated, and scalable way.
+
+The following sections provide instructions for trying out the Technology
+Preview Operator Framework in {product-title} 3.11 as a cluster administrator.
+
+ifdef::openshift-enterprise[]
+[IMPORTANT]
+====
+The Operator Framework is a Technology Preview feature.
+Technology Preview features are not supported with Red Hat production service
+level agreements (SLAs), might not be functionally complete, and Red Hat does
+not recommend to use them for production. These features provide early access to
+upcoming product features, enabling customers to test functionality and provide
+feedback during the development process.
+
+For more information on Red Hat Technology Preview features support scope, see
+https://access.redhat.com/support/offerings/techpreview/.
+====
+endif::[]
+
+== What's in the Technology Preview?
+
+The Technology Preview Operator Framework installs the
+link:https://github.com/operator-framework/operator-lifecycle-manager[Operator Lifecycle Manager (OLM)],
+which aids cluster administrators in installing, upgrading, and granting access
+to Operators running on their {product-title} cluster.
+
+The {product-title} web console is also updated with new management screens for
+cluster administrators to install Operators, as well as grant specific projects
+access to use the catalog of Operators available on the cluster.
+
+For developers, a self-service experience allows provisioning and configuring
+instances of databases, monitoring, and big data services without having to be
+subject matter experts, because the Operator has that knowledge baked into it.
+
+.Operator Catalog Sources
+image::olm-catalog-sources.png[]
+
+In the screenshot, you can see the pre-loaded catalog sources of partner
+Operators from leading software vendors:
+
+Couchbase Operator:: Couchbase offers a NoSQL database that provides a mechanism
+for storage and retrieval of data which is modeled in means other than the
+tabular relations used in relational databases. Available on {product-title}
+3.11 as a developer preview, supported by Couchbase, the Operator allows you to
+run Couchbase deployments natively on {product-title}. It installs and can more
+effectively failover your NoSQL clusters.
+
+Dynatrace Operator:: Dynatrace application monitoring provides performance
+metrics in real time and can help detect and diagnose problems automatically.
+The Operator will more easily install the container-focused monitoring stack and
+connect it back to the Dynatrace monitoring cloud, watching custom resources and
+monitoring desired states constantly.
+
+MongoDB Operator:: MongoDB is a distributed, transactional database that stores
+data in flexible, JSON-like documents. The Operator supports deploying both
+production-ready replica sets and sharded clusters, and standalone dev/test
+instances. It works in conjunction with MongoDB Ops Manager, ensuring all
+clusters are deployed according to operational best practices.
+
+Also included are the following Red Hat-provided Operators:
+
+Red Hat AMQ Streams Operator:: Red Hat AMQ Streams is a massively scalable,
+distributed, and high performance data streaming platform based on the Apache
+Kafka project. It offers a distributed backbone that allows microservices and
+other applications to share data with extremely high throughput and extremely
+low latency.
+
+etcd Operator:: etcd is a distributed key-value store that provides a reliable
+way to store data across a cluster of machines. This Operator enables users to
+configure and manage the complexities of etcd using a simple declarative
+configuration that creates, configures, and manages etcd clusters.
+
+Prometheus Operator:: Prometheus is a cloud native monitoring system co-hosted
+with Kubernetes within the CNCF. This Operator includes application domain
+knowledge to take care of common tasks like create/destroy, simple
+configuration, automatic generating of monitoring target configurations via
+labels, and more.
+
+include::modules/installing-olm-using-ansible.adoc[leveloffset=+1]
+include::modules/launching-your-first-operator.adoc[leveloffset=+1]
+
+== Getting involved
+
+The OpenShift team would love to hear about your experience using the Operator Framework and suggestions you have for services you would like to see offered as an Operator.
+
+Get in touch with the team by emailing openshift-operators@redhat.com.
+
+////
+== Appendices
+
+[discrete]
+include::modules/operator-project-staffolding-layout.adoc[leveloffset=+2]
+////

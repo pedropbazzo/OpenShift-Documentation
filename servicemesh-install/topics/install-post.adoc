@@ -1,0 +1,56 @@
+[[verifying-installation]]
+= Verifying the installation
+
+Run the following command to determine if the operator finished deploying the control plane.
+
+[NOTE]
+====
+The name of the resource is `istio-installation`.
+====
+
+----
+$ oc get controlplane/istio-installation -n istio-system --template='{{range .status.conditions}}{{printf "%s=%s, reason=%s, message=%s\n\n" .type .status .reason .message}}{{end}}'
+----
+
+When the control plane installation is finished, the output is similar to the following:
+
+----
+Installed=True, reason=InstallSuccessful, message=%!s(<nil>)
+----
+
+After the control plane is deployed, issue the following command to check the status of the pods:
+
+----
+$ oc get pods -n istio-system
+----
+
+Verify that the pods are in a state similar to this:
+
+----
+NAME                                          READY     STATUS      RESTARTS   AGE
+3scale-istio-adapter-7df4db48cf-sc98s         1/1       Running     0          13s
+elasticsearch-0                               1/1       Running     0          29s
+grafana-c7f5cc6b6-vg6db                       1/1       Running     0          33s
+istio-citadel-d6d6bb7bb-jgfwt                 1/1       Running     0          1m
+istio-egressgateway-69448cf7dc-b2qj5          1/1       Running     0          1m
+istio-galley-f49696978-q949d                  1/1       Running     0          1m
+istio-ingressgateway-7759647fb6-pfpd5         1/1       Running     0          1m
+istio-pilot-7595bfd696-plffk                  2/2       Running     0          1m
+istio-policy-779454b878-xg7nq                 2/2       Running     2          1m
+istio-sidecar-injector-6655b6ffdb-rn69r       1/1       Running     0          1m
+istio-telemetry-dd9595888-8xjz2               2/2       Running     2          1m
+jaeger-agent-gmk72                            1/1       Running     0          25s
+jaeger-collector-7f644df9f5-dbzcv             1/1       Running     1          25s
+jaeger-query-6f47bf4777-h4wmh                 1/1       Running     1          25s
+kiali-7cc48b6cbb-74gcf                        1/1       Running     0          17s
+prometheus-5f9fd67f8-r6b86                    1/1       Running     0          1m
+----
+
+If you also installed the Fabric8 launcher, monitor the containers within the `devex` project until the following state is reached:
+
+----
+NAME                          READY     STATUS    RESTARTS   AGE
+configmapcontroller-1-8rr6w   1/1       Running   0          1m
+launcher-backend-2-2wg86      1/1       Running   0          1m
+launcher-frontend-2-jxjsd     1/1       Running   0          1m
+----

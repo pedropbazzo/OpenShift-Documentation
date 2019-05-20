@@ -1,0 +1,272 @@
+[[scaling-performance-capacity-host-practices]]
+= Recommended Host Practices
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+toc::[]
+
+[[scaling-performance-capacity-host-practices-master]]
+== Recommended Practices for {product-title} Master Hosts
+
+In addition to pod traffic, the most-used data-path in an {product-title}
+infrastructure is between the {product-title} master hosts and etcd. The
+{product-title} API server (part of the master binary) consults etcd for node
+status, network configuration, secrets, and more.
+
+Optimize this traffic path by:
+
+* Running etcd on master hosts. By default, etcd runs in a static pod on all
+master hosts.
+
+* Ensuring an uncongested, low latency LAN communication link between master hosts.
+
+The {product-title} master caches deserialized versions of resources
+aggressively to ease CPU load. However, in smaller clusters of less than 1000
+pods, this cache can waste a lot of memory for negligible CPU load reduction.
+The default cache size is 50,000 entries, which, depending on the size of your
+resources, can grow to occupy 1 to 2 GB of memory.  This cache size can be
+reduced using the following setting the in *_/etc/origin/master/master-config.yaml_*:
+
+----
+kubernetesMasterConfig:
+  apiServerArguments:
+    deserialization-cache-size:
+    - "1000"
+----
+
+For large and/or dense clusters, the API server might get overloaded because of the
+default QPS limits. Provided sufficient CPU and memory resources are available on the 
+API server system(s), this issue can be safely alleviated by doubling or quadrupling the 
+default API qps and burst values in the *_/etc/origin/master/master-config.yaml_* file:
+
+----
+masterClients:
+  externalKubernetesClientConnectionOverrides:
+    burst: 1600
+    qps: 800
+  openshiftLoopbackClientConnectionOverrides:
+    burst: 2400
+    qps: 1200
+----
+
+[[scaling-performance-capacity-host-practices-node]]
+== Recommended Practices for {product-title} Node Hosts
+
+The {product-title} node configuration file contains important options, such as the
+iptables synchronization period, the Maximum Transmission Unit (MTU) of the SDN network, and the proxy-mode.
+To configure your nodes, modify the appropriate xref:../admin_guide/manage_nodes.adoc#modifying-nodes[node configuration map].
+
+[NOTE]
+====
+Do not edit the `node-config.yaml` file directly.
+==== 
+
+The node configuration file allows you to pass arguments to the kubelet
+(node) process. You can view a list of possible options by running `kubelet
+--help`.
+
+[NOTE]
+====
+Not all kubelet options are supported by {product-title}, and are used in the
+upstream Kubernetes. This means certain options are in limited support.
+====
+
+include::admin_guide/manage_nodes.adoc[tag=admin_guide_manage_nodes]
+
+See the xref:../install/index.adoc#sizing[Sizing
+Considerations] section in the installation documentation for the recommended
+limits for an {product-title} cluster. The recommended sizing accounts for
+{product-title} and container engine coordination for container status updates. This
+coordination puts CPU pressure on the master and container engine processes, which can
+include writing a large amount of log data.
+
+[[scaling-performance-capacity-host-practices-etcd]]
+== Recommended Practices for {product-title} etcd Hosts
+
+etcd is a distributed key-value store that {product-title} uses for
+configuration.
+
+|======================
+|{product-title} Version |etcd version|storage schema version
+|3.3 and earlier |2.x | v2
+|3.4 and 3.5 |3.x | v2
+|3.6 |3.x | v2 (upgrades)
+|3.6 |3.x | v3 (new installations)
+|3.7 and later |3.x | v3
+|======================
+
+etcd 3.x introduces important scalability and performance improvements that reduce CPU, memory, network, and disk requirements for any size cluster. etcd 3.x also implements a backwards compatible storage API that facilitates a two-step migration of the on-disk etcd database. For migration purposes, the storage mode used by etcd 3.x in {product-title} 3.5 remained in v2 mode. As of {product-title} 3.6, new installations use storage mode v3. Upgrades from previous versions of {product-title} will _not_ automatically migrate data from v2 to v3. You must use the supplied playbooks and follow the documented process to migrate the data.
+
+Version 3 of etcd implements a backwards compatible storage API that facilitates a two-step migration of the on-disk etcd database. For migration purposes, the storage mode used by etcd 3.x in {product-title} 3.5 remained in v2 mode. As of {product-title} 3.6, new installations use storage mode v3.
+As part of the process to upgrade to {product-title} 3.7, you upgrade your etcd
+storage API to v3, if required. In versions 3.7 and later, you must use the v3 API. 
+
+In addition to changing the storage mode for new installs to v3, {product-title} 3.6 also begins enforcing _quorum reads_ for all {product-title} types. This is done to ensure that queries against etcd do not return stale data. In single-node etcd clusters, stale data is not a concern. In highly available etcd deployments typically found in production clusters, quorum reads ensure valid query results. A quorum read is _linearizable_ in database terms - every client sees the latest updated state of the cluster, and all clients see the same sequence of reads and writes. See the etcd 3.1 link:https://coreos.com/blog/etcd-3-1-announcement.html[announcement] for more information on performance improvements.
+
+It is important to note that {product-title} uses etcd for storing additional information beyond what Kubernetes itself requires. For example, {product-title} stores information about images, builds, and other components in etcd, as is required by features that {product-title} adds on top of Kubernetes. Ultimately, this means that guidance around performance and sizing for etcd hosts will differ from Kubernetes and other recommendations in salient ways. Red Hat tests etcd scalability and performance with the {product-title} use-case and parameters in mind to generate the most accurate recommendations.
+
+Performance improvements were quantified using a 300-node {product-title} 3.6 cluster using the link:https://github.com/openshift/svt/tree/master/openshift_scalability[cluster-loader] utility.
+Comparing etcd 3.x (storage mode v2) versus etcd 3.x (storage mode v3), clear improvements are identified in the charts below.
+
+Storage IOPS under load is significantly reduced:
+
+ifdef::openshift-enterprise,openshift-origin,openshift-dedicated[]
+image::full-run-iops.png["Full Run IOPS"]
+endif::[]
+
+Storage IOPS in steady state is also significantly reduced:
+
+ifdef::openshift-enterprise,openshift-origin,openshift-dedicated[]
+image::steady-state-iops.png["Steady State IOPS"]
+endif::[]
+
+Viewing the same I/O data, plotting the average IOPS in both modes:
+
+ifdef::openshift-enterprise,openshift-origin,openshift-dedicated[]
+image::average-read-write-iops.png["Read+Write IOPS"]
+endif::[]
+
+CPU utilization by both the API server (master) and etcd processes is reduced:
+
+ifdef::openshift-enterprise,openshift-origin,openshift-dedicated[]
+image::cpu-usage.png["CPU Usage"]
+endif::[]
+
+Memory utilization by both the API server (master) and etcd processes is also reduced:
+
+ifdef::openshift-enterprise,openshift-origin,openshift-dedicated[]
+image::memory-usage-rss.png["Memory Usage"]
+endif::[]
+
+
+[IMPORTANT]
+====
+After profiling etcd under {product-title}, etcd frequently performs small
+amounts of storage input and output. Using etcd with storage that handles small
+read/write operations quickly, such as SSD, is highly recommended.
+====
+
+Looking at the size I/O operations done by a 3-node cluster of etcd 3.1 (using storage v3 mode and with quorum reads enforced), read sizes are as follows:
+
+ifdef::openshift-enterprise,openshift-origin,openshift-dedicated[]
+image::reads.png["Histogram of etcd I/O sizes"]
+endif::[]
+
+And writes:
+
+ifdef::openshift-enterprise,openshift-origin,openshift-dedicated[]
+image::writes.png["Histogram of etcd I/O sizes"]
+endif::[]
+
+[NOTE]
+====
+etcd processes are typically memory intensive. Master / API server processes are CPU intensive. This makes them a reasonable co-location pair within a single machine or virtual machine (VM). Optimize communication between etcd and master hosts either by co-locating them on the same host, or providing a dedicated network.
+====
+
+[[providing-storage-to-an-etcd-node-using-pci-passthrough-with-openstack]]
+=== Providing Storage to an etcd Node Using PCI Passthrough with OpenStack
+
+To provide fast storage to an etcd node so that etcd is stable at large scale,
+use PCI passthrough to pass a non-volatile memory express (NVMe) device directly
+to the etcd node. To set this up with Red Hat OpenStack 11 or later, complete
+the following on the OpenStack compute nodes where the PCI device exists.
+
+. Ensure Intel Vt-x is enabled in BIOS.
+
+. Enable the input–output memory management unit (IOMMU). In the
+*_/etc/sysconfig/grub_* file, add `intel_iommu=on iommu=pt` to the end of the
+`GRUB_CMDLINX_LINUX` line, within the quotation marks.
+
+.  Regenerate *_/etc/grub2.cfg_* by running:
++
+----
+$ grub2-mkconfig -o /etc/grub2.cfg
+----
+
+. Reboot the system.
+
+. On controllers in *_/etc/nova.conf_*:
++
+----
+[filter_scheduler]
+
+enabled_filters=RetryFilter,AvailabilityZoneFilter,RamFilter,DiskFilter,ComputeFilter,ComputeCapabilitiesFilter,ImagePropertiesFilter,ServerGroupAntiAffinityFilter,ServerGroupAffinityFilter,PciPassthroughFilter
+
+available_filters=nova.scheduler.filters.all_filters
+
+[pci]
+
+alias = { "vendor_id":"144d", "product_id":"a820",
+"device_type":"type-PCI", "name":"nvme" }
+----
+
+. Restart `nova-api` and `nova-scheduler` on the controllers.
+
+. On compute nodes in *_/etc/nova/nova.conf_*:
++
+----
+[pci]
+
+passthrough_whitelist = { "address": "0000:06:00.0" }
+
+alias = { "vendor_id":"144d", "product_id":"a820",
+"device_type":"type-PCI", "name":"nvme" }
+----
++
+To retrieve the required `address`, `vendor_id`, and `product_id` values of the
+NVMe device you want to passthrough, run:
++
+----
+# lspci -nn | grep devicename
+----
+
+. Restart `nova-compute` on the compute nodes.
+
+. Configure the OpenStack version you are running to use the NVMe and launch the
+etcd node.
+
+[[scaling-performance-capacity-tuned-profile]]
+== Scaling Hosts Using the Tuned Profile
+
+*Tuned* is a tuning profile delivery mechanism enabled by default in Red Hat
+Enterprise Linux (RHEL) and other Red Hat products. *Tuned* customizes Linux
+settings, such as sysctls, power management, and kernel command line options, to
+optimize the operating system for different workload performance and scalability
+requirements.
+
+{product-title} leverages the `tuned` daemon and includes *Tuned* profiles
+called `openshift`, `openshift-node` and `openshift-control-plane`. These
+profiles safely increase some of the commonly encountered vertical scaling
+limits present in the kernel, and are automatically applied to your system
+during installation.
+
+The *Tuned* profiles support inheritance between profiles.  They also support
+an auto-parent functionality which selects a parent profile based on whether the
+profile is used in a virtual environment.  The `openshift` profile uses both of these
+features and is a parent of `openshift-node` and `openshift-control-plane` profiles.
+It contains tuning relevant to both {product-title} application nodes and control plane
+nodes respectively. The `openshift-node` and `openshift-control-plane` profiles
+are set on application and control plane nodes respectively.
+
+The profile hierarchy with the `openshift` profile as a parent ensures the
+tuning delivered to the {product-title} system is a union of
+`throughput-performance` (the default for RHEL) for bare metal hosts
+and `virtual-guest` for RHEL and `atomic-guest` for RHEL Atomic Host nodes.
+
+To see which *Tuned* profile is enabled on your system, run:
+
+----
+# tuned-adm active
+Current active profile: openshift-node
+----
+
+See the
+link:https://access.redhat.com/documentation/en-US/Red_Hat_Enterprise_Linux/7/html-single/Performance_Tuning_Guide/index.html#chap-Red_Hat_Enterprise_Linux-Performance_Tuning_Guide-Tuned[Red
+Hat Enterprise Linux Performance Tuning Guide] for more information about
+*Tuned*.

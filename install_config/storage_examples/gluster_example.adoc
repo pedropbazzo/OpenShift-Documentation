@@ -1,0 +1,52 @@
+include::_snippets/glusterfs.adoc[]
+[[install-config-storage-examples-gluster-example]]
+= Complete Example Using GlusterFS
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+toc::[]
+
+== Overview
+
+This topic provides an end-to-end example of how to use an existing
+{gluster-native}, {gluster-external}, or standalone {gluster} cluster as
+persistent storage for {product-title}. It is assumed that a working
+{gluster} cluster is already set up.
+For help installing {gluster-native} or {gluster-external}, see
+xref:../persistent_storage/persistent_storage_glusterfs.adoc#install-config-persistent-storage-persistent-storage-glusterfs[Persistent Storage Using {gluster}].
+ifdef::openshift-enterprise[]
+For standalone {gluster}, consult the
+link:https://access.redhat.com/documentation/en-US/Red_Hat_Storage/3.3/html/Administration_Guide/index.html[{gluster} Administration Guide].
+endif::[]
+
+For an end-to-end example of how to dynamically provision GlusterFS volumes, see
+xref:gluster_dynamic_example.adoc#install-config-storage-examples-gluster-dynamic-example[Complete Example Using GlusterFS for Dynamic
+Provisioning].
+
+[NOTE]
+====
+All `oc` commands are executed on the {product-title} master host.
+====
+
+[[gluster-example-prerequisites]]
+== Prerequisites
+
+include::install_config/persistent_storage/topics/glusterfs_prereqs_software.adoc[]
+
+include::install_config/persistent_storage/topics/glusterfs_security_selinux.adoc[]
+
+[[static-provisioning]]
+== Static Provisioning
+
+include::install_config/persistent_storage/topics/glusterfs_static_provisioning.adoc[]
+
+[[gluster-example-using-the-storage]]
+== Using the Storage
+
+include::install_config/persistent_storage/topics/glusterfs_using_storage.adoc[]

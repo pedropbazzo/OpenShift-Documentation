@@ -1,0 +1,49 @@
+include::_snippets/glusterfs.adoc[]
+[[install-config-storage-examples-gluster-dynamic-example]]
+= Complete Example Using GlusterFS for Dynamic Provisioning
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+toc::[]
+
+[[cns-glusterfs-dynamic-example-overview]]
+== Overview
+
+This topic provides an end-to-end example of how to use an existing
+{gluster-native}, {gluster-external}, or standalone {gluster} cluster as
+dynamic persistent storage for {product-title}. It is assumed that a working
+{gluster} cluster is already set up. For help installing {gluster-native} or
+{gluster-external}, see
+xref:../persistent_storage/persistent_storage_glusterfs.adoc#install-config-persistent-storage-persistent-storage-glusterfs[Persistent Storage Using {gluster}].
+ifdef::openshift-enterprise[]
+For standalone {gluster}, consult the
+link:https://access.redhat.com/documentation/en-US/Red_Hat_Storage/3.3/html/Administration_Guide/index.html[{gluster} Administration Guide].
+endif::[]
+
+[NOTE]
+====
+All `oc` commands are executed on the {product-title} master host.
+====
+
+[[gluster-dynamic-example-prerequisites]]
+== Prerequisites
+
+include::install_config/persistent_storage/topics/glusterfs_prereqs_software.adoc[]
+
+include::install_config/persistent_storage/topics/glusterfs_security_selinux.adoc[]
+
+[[dynamic-provisioning]]
+== Dynamic Provisioning
+
+include::install_config/persistent_storage/topics/glusterfs_dynamic_provisioning.adoc[]
+
+[[gluster-dynamic-example-using-the-storage]]
+== Using the Storage
+
+include::install_config/persistent_storage/topics/glusterfs_using_storage.adoc[]

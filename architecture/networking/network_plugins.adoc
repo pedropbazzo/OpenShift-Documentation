@@ -1,0 +1,73 @@
+[[architecture-additional-concepts-network-plugins]]
+= Available SDN plug-ins
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+
+toc::[]
+
+
+{product-title} supports the Kubernetes
+link:https://kubernetes.io/docs/admin/network-plugins/#cni[Container Network Interface (CNI)] as the interface between the {product-title} and Kubernetes.
+Software defined network (SDN) plug-ins match network capabilities to your
+networking needs. Additional plug-ins that support the CNI interface can be
+added as needed.
+
+[[openshift-sdn]]
+
+== OpenShift SDN
+
+OpenShift SDN is installed and configured by default as part of the
+Ansible-based installation procedure. See the
+xref:../../architecture/networking/sdn.adoc#architecture-additional-concepts-sdn[OpenShift SDN] section
+for more information.
+
+== Third-Party SDN plug-ins
+
+ifndef::openshift-online[]
+[[flannel-sdn]]
+=== Flannel SDN
+include::architecture/topics/flannel.adoc[]
+endif::[]
+
+ifdef::openshift-origin[]
+[[contiv-sdn]]
+=== Contiv SDN
+include::architecture/topics/contiv.adoc[]
+endif::[]
+
+ifdef::openshift-enterprise,openshift-origin[]
+[[nsx-sdn]]
+=== NSX-T SDN
+include::architecture/topics/nsxt.adoc[]
+endif::[]
+
+ifdef::openshift-enterprise,openshift-origin[]
+[[nuage-sdn]]
+=== Nuage SDN
+include::architecture/topics/nuage.adoc[]
+endif::[]
+
+////
+=== Contrail
+<Why is this preferred?>
+<How to install/Link to installation docs>
+
+=== Essentials/Calico
+<Why is this preferred?>
+<How to install/Link to installation docs>
+
+=== NSX-T
+<Why is this preferred?>
+<How to install/Link to installation docs>
+////
+
+ifdef::openshift-origin,openshift-enterprise[]
+[[kuryr-sdn]]
+=== Kuryr SDN
+include::architecture/topics/kuryr.adoc[]
+endif::[]

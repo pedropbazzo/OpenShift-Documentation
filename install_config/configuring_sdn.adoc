@@ -1,0 +1,560 @@
+[[install-config-configuring-sdn]]
+= Configuring the SDN
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+
+toc::[]
+
+== Overview
+
+The xref:../architecture/networking/sdn.adoc#architecture-additional-concepts-sdn[OpenShift SDN] enables
+communication between pods across the {product-title} cluster, establishing a _pod
+network_. Three xref:../architecture/networking/sdn.adoc#architecture-additional-concepts-sdn[SDN plug-ins]
+are currently available (*ovs-subnet*, *ovs-multitenant*, and *ovs-networkpolicy*), which provide
+different methods for configuring the pod network.
+
+[[admin-guide-configuring-sdn-available-sdn-providers]]
+== Available SDN Providers
+
+The upstream Kubernetes project does not come with a default network solution.
+Instead, Kubernetes has developed a Container Network Interface (CNI) to allow
+network providers for integration with their own SDN solutions.
+
+There are several OpenShift SDN plug-ins available out of the box from Red Hat,
+as well as third-party plug-ins.
+
+Red Hat has worked with a number of SDN providers to certify their SDN network
+solution on {product-title} via the Kubernetes CNI interface, including a
+support process for their SDN plug-in through their product’s entitlement
+process. Should you open a support case with OpenShift, Red Hat can facilitate
+an exchange process so that both companies are involved in meeting your needs.
+
+The following SDN solutions are validated and supported on {product-title}
+directly by the third-party vendor:
+
+* Cisco Contiv (™)
+* Juniper Contrail (™)
+* Nokia Nuage (™)
+* Tigera Calico (™)
+* VMware NSX-T (™)
+
+[discrete]
+[[configuring-sdn-installing-vmware-nsx-t]]
+==== Installing VMware NSX-T (™) on {product-title}
+
+VMware NSX-T (™) provides an SDN and security infrastructure to build
+cloud-native application environments. In addition to vSphere hypervisors (ESX),
+these environments include KVM and native public clouds.
+
+The current integration requires a _new_ install of both NSX-T and
+{product-title}. Currently, NSX-T version 2.4 is supported, and only supports
+the use of ESXi and KVM hypervisors at this time.
+
+See the
+link:https://docs.vmware.com/en/VMware-NSX-T-Data-Center/2.4/nsxt_24_ncp_openshift.pdf[NSX-T
+Container Plug-in for OpenShift - Installation and Administration Guide] for
+more information.
+
+
+[[configuring-sdn-config-pod-network-ansible]]
+== Configuring the Pod Network with Ansible
+
+For initial cluster installations, the *ovs-subnet* plug-in is installed and
+configured by default, though it can be overridden during installation using the
+`os_sdn_network_plugin_name` parameter, which is configurable in the Ansible
+inventory file.
+
+For example, to override the standard *ovs-subnet* plug-in and use the *ovs-multitenant* plug-in instead:
+
+----
+# Configure the multi-tenant SDN plugin (default is 'redhat/openshift-ovs-subnet')
+os_sdn_network_plugin_name='redhat/openshift-ovs-multitenant'
+----
+
+See
+xref:../install/configuring_inventory_file.adoc#advanced-install-networking-variables-table[Configuring Cluster Variables] for descriptions of networking-related Ansible variables
+that can be set in your inventory file.
+
+[[configuring-the-pod-network-on-masters]]
+== Configuring the Pod Network on Masters
+
+The cluster administrators can control pod network settings on master hosts by
+modifying parameters in the `*networkConfig*` section of the
+xref:../install_config/master_node_configuration.adoc#install-config-master-node-configuration[master
+configuration file] (located at *_/etc/origin/master/master-config.yaml_* by
+default):
+
+.Configuring a pod network for a single CIDR
+[source,yaml]
+----
+networkConfig:
+  clusterNetworks:
+  - cidr: 10.128.0.0/14 <1>
+    hostSubnetLength: 9 <2>
+  networkPluginName: "redhat/openshift-ovs-subnet" <3>
+  serviceNetworkCIDR: 172.30.0.0/16 <4>
+----
+<1> Cluster network for node IP allocation
+<2> Number of bits for pod IP allocation within a node
+<3> Set to `redhat/openshift-ovs-subnet` for the *ovs-subnet* plug-in,
+`redhat/openshift-ovs-multitenant` for the *ovs-multitenant* plug-in, or
+`redhat/openshift-ovs-networkpolicy` for the *ovs-networkpolicy* plug-in
+<4> Service IP allocation for the cluster
+
+Alternatively, you can create a pod network with multiple CIDR ranges by
+adding separate ranges into the `clusterNetworks` field with the range and the `hostSubnetLength`.
+
+Multiple ranges can be used at once, and the range can be expanded or
+contracted. Nodes can be moved from one range to another by evacuating a node,
+then deleting and re-creating the node. See the
+xref:../admin_guide/manage_nodes.adoc#admin-guide-manage-nodes[Managing Nodes]
+section for more information. Node allocations occur in the order listed, then
+when the range is full, move to the next on the list.
+
+.Configuring a pod network for multiple CIDRs
+[source,yaml]
+----
+networkConfig:
+  clusterNetworks:
+  - cidr: 10.128.0.0/14 <1>
+    hostSubnetLength: 9 <2>
+  - cidr: 10.132.0.0/14
+    hostSubnetLength: 9
+  externalIPNetworkCIDRs: null
+  hostSubnetLength: 9
+  ingressIPNetworkCIDR: 172.29.0.0/16
+  networkPluginName: redhat/openshift-ovs-multitenant <3>
+  serviceNetworkCIDR: 172.30.0.0/16
+----
+<1> Cluster network for node IP allocation.
+<2> Number of bits for pod IP allocation within a node.
+<3> Set to `redhat/openshift-ovs-subnet` for the *ovs-subnet* plug-in,
+`redhat/openshift-ovs-multitenant` for the *ovs-multitenant* plug-in, or
+`redhat/openshift-ovs-networkpolicy` for the *ovs-networkpolicy* plug-in.
+
+You can add elements to the `clusterNetworks` value, or remove them if no node
+is using that CIDR range, but be sure to restart the API and master services for any changes to take effect.
+
+----
+master-restart api
+master-restart controllers
+----
+
+
+[IMPORTANT]
+====
+The `*hostSubnetLength*` value cannot be changed after the cluster is
+first created, A `*cidr*` field can only be changed to be a
+larger network that still contains the original network if nodes are
+allocated within it's range , and
+`*serviceNetworkCIDR*` can only be expanded. For example, given the
+typical value of *10.128.0.0/14*, you could change
+`*cidr*` to *10.128.0.0/9* (i.e., the entire upper half
+of net 10) but not to *10.64.0.0/16*, because that does not overlap
+the original value.
+
+You can change `*serviceNetworkCIDR*` from *172.30.0.0/16* to *172.30.0.0/15*,
+but not to *172.28.0.0/14*, because even though the original range is entirely
+inside the new range, the original range must be at the start of the CIDR. See
+xref:expanding-the-service-network[Expanding the service network] for more
+information.
+====
+
+[[config-changing-vxlan-port-for-cluster-network]]
+== Changing the VXLAN PORT for the cluster network
+
+As a cluster administrator, you can change the VXLAN port the system uses.
+
+Because you cannot change the VXLAN port of a running `clusternetwork` object, you must delete any existing network configurations and
+create a new configuration by editing the `vxlanPort` variable in the master configuration file.
+
+. Delete the existing `clusternetwork`:
++
+----
+# oc delete clusternetwork default
+----
+
+. Edit the master configuration file located at
+*_/etc/origin/master/master-config.yaml_* by default creating the new `clusternetwork`:
++
+----
+networkConfig:
+  clusterNetworks:
+  - cidr: 10.128.0.0/14
+    hostSubnetLength: 9
+  - cidr: 10.132.0.0/14
+    hostSubnetLength: 9
+  externalIPNetworkCIDRs: null
+  hostSubnetLength: 9
+  ingressIPNetworkCIDR: 172.29.0.0/16
+  networkPluginName: redhat/openshift-ovs-multitenant
+  serviceNetworkCIDR: 172.30.0.0/16
+  vxlanPort: 4889 <1>
+----
+<1> Set to the value used by the nodes for the VXLAN Port. It can be an integer between 1-65535. The default value is `4789`.
+
+. Add the new port to the iptables rule on each cluster node:
++
+----
+# iptables -A OS_FIREWALL_ALLOW -p udp -m state --state NEW -m udp --dport 4889 -j ACCEPT <1>
+----
+<1> `4889` is the `vxlanPort` value that you set in the master configuration file.
+
+. Restart the master services:
++
+----
+# master-restart api
+# master-restart controllers
+----
+
+. Delete any old SDN pods to propagate new pods with the new change:
++
+----
+# oc delete pod -l app=sdn -n openshift-sdn
+----
+
+[[configuring-the-pod-network-on-nodes]]
+== Configuring the Pod Network on Nodes
+
+The cluster administrators can control pod network settings on nodes by modifying
+parameters in the `*networkConfig*` section of the
+appropriate xref:../admin_guide/manage_nodes.adoc#modifying-nodes[node configuration map]:
+
+====
+[source,yaml]
+----
+networkConfig:
+  mtu: 1450 <1>
+  networkPluginName: "redhat/openshift-ovs-subnet" <2>
+----
+<1> Maximum transmission unit (MTU) for the pod overlay network
+<2> Set to *redhat/openshift-ovs-subnet* for the *ovs-subnet* plug-in,
+*redhat/openshift-ovs-multitenant* for the *ovs-multitenant* plug-in, or
+*redhat/openshift-ovs-networkpolicy* for the *ovs-networkpolicy* plug-in
+====
+
+[NOTE]
+====
+You must change the MTU size on all masters and nodes that are part of the
+{product-title} SDN. Also, the MTU size of the tun0 interface must be the same
+across all nodes that are part of the cluster.
+====
+
+[[expanding-the-service-network]]
+== Expanding the service network
+
+If you are running low on addresses in your service network, you can expand the
+range as long as you ensure that the current range is at the beginning of the
+new range:
+
+. xref:configuring-the-pod-network-on-masters[Change the `*serviceNetworkCIDR*`
+parameter in the configuration files for all masters]
+(*_/etc/origin/master/master-config.yaml_* by default). Change only the number
+following the `/` to a smaller number.
+
+. Delete the `*clusterNetwork*` object:
++
+----
+$ oc delete clusternetwork default
+----
+
+. Restart the master host services:
++
+----
+# master-restart controllers
+----
+
+. Update the value of the `openshift_portal_net` variable in the Ansible
+inventory file to the new CIDR:
++
+----
+# Configure SDN cluster network and kubernetes service CIDR blocks. These
+# network blocks should be private and should not conflict with network blocks
+# in your infrastructure that pods may require access to. Can not be changed
+# after deployment.
+#osm_cluster_network_cidr=10.1.0.0/16
+#openshift_portal_net=172.30.0.0/<new_CIDR_range>
+----
+
+. Run the `*config.yml*` Ansible playbook to redeploy the cluster:
++
+----
+$ cd /usr/share/ansible/openshift-ansible
+$ ansible-playbook playbooks/openshift-master/config.yml
+----
+
+include::day_two_guide/topics/increasing_docker_storage.adoc[tag=evacuating-a-node]
+
+[[migrating-between-sdn-plugins]]
+== Migrating Between SDN Plug-ins
+
+If you are already using one SDN plug-in and want to switch to another:
+
+. Change the `*networkPluginName*` parameter on all
+xref:configuring-the-pod-network-on-masters[masters] and
+xref:configuring-the-pod-network-on-nodes[nodes] in their configuration files.
+
+. Restart the API and master services on all masters.
++
+----
+# master-restart api
+# master-restart controllers
+----
+
+. Stop the node service on all masters and nodes:
++
+----
+# systemctl stop atomic-openshift-node.service
+----
+
+. If you are switching between OpenShift SDN plug-ins, restart OpenShift SDN on all masters and nodes.
++
+----
+oc delete pod --all -n openshift-sdn
+----
+
+. Restart the node service on all masters and nodes.
++
+----
+# systemctl restart atomic-openshift-node.service
+----
+
+. If you are switching from an OpenShift SDN plug-in to a
+third-party plug-in, then clean up OpenShift SDN-specific
+artifacts:
++
+----
+$ oc delete clusternetwork --all
+$ oc delete hostsubnets --all
+$ oc delete netnamespaces --all
+----
+
+When switching from the *ovs-subnet* to the *ovs-multitenant* OpenShift SDN plug-in,
+all the existing projects in the cluster will be fully isolated (assigned unique VNIDs).
+The cluster administrators can choose to xref:../admin_guide/managing_networking.adoc#admin-guide-pod-network[modify
+the project networks] using the administrator CLI.
+
+Check VNIDs by running:
+
+----
+$ oc get netnamespace
+----
+
+[[migrating-between-sdn-plugins-networkpolicy]]
+=== Migrating from ovs-multitenant to ovs-networkpolicy
+
+[NOTE]
+====
+The `v1` NetworkPolicy features are available only in {product-title}. This
+means that egress policy types, IPBlock, and combining `podSelector` and
+`namespaceSelector` are not available in {product-title}.
+====
+
+[NOTE]
+====
+Do not apply `NetworkPolicy` features on default {product-title} projects, because they can disrupt communication with the cluster.
+====
+
+In addition to the generic plug-in migration steps above in the xref:migrating-between-sdn-plugins[Migrating between SDN plug-ins section], there is one additional
+step when migrating from the *ovs-multitenant* plug-in to the
+*ovs-networkpolicy* plug-in; you must ensure that every namespace has a unique
+`NetID`. This means that if you have previously
+xref:../admin_guide/managing_networking.adoc#joining-project-networks[joined
+projects together] or
+xref:../admin_guide/managing_networking.adoc#making-project-networks-global[made
+projects global], you will need to undo that before switching to the
+*ovs-networkpolicy* plug-in, or the NetworkPolicy objects may not function
+correctly.
+
+A helper script is available that fixes `NetID's`, creates NetworkPolicy objects
+to isolate previously-isolated namespaces, and enables connections between
+previously-joined namespaces.
+
+Use the following steps to migrate to the *ovs-networkpolicy*
+plug-in, by using this helper script, while still running the *ovs-multitenant* plug-in:
+
+. Download the script and add the execution file permission:
++
+[source, bash]
+----
+$ curl -O https://raw.githubusercontent.com/openshift/origin/master/contrib/migration/migrate-network-policy.sh
+$ chmod a+x migrate-network-policy.sh
+----
+. Run the script (requires the cluster administrator role).
++
+[source, bash]
+----
+$ ./migrate-network-policy.sh
+----
+
+After running this script, every namespace is fully isolated from every other
+namespace, therefore connection attempts between pods in different namespaces
+will fail until you complete the migration to the *ovs-networkpolicy* plug-in.
+
+If you want newly-created namespaces to also have the same policies by default, you can set
+xref:../admin_guide/managing_networking.adoc#admin-guide-networking-networkpolicy-setting-default[default
+NetworkPolicy objects] to be created matching the `default-deny` and
+`allow-from-global-namespaces` policies created by the migration script.
+
+[NOTE]
+====
+In case of script failures or other errors, or if you later decide you want to
+revert back to the *ovs-multitenant* plug-in, you can use the
+link:https://raw.githubusercontent.com/openshift/origin/master/contrib/migration/unmigrate-network-policy.sh[un-migration script]. This script undoes the changes made by the migration script and re-joins
+previously-joined namespaces.
+====
+
+[[external-access-to-the-cluster-network]]
+== External Access to the Cluster Network
+
+If a host that is external to {product-title} requires access to the cluster network,
+you have two options:
+
+. Configure the host as an {product-title} node but mark it
+xref:../admin_guide/manage_nodes.adoc#marking-nodes-as-unschedulable-or-schedulable[unschedulable]
+so that the master does not schedule containers on it.
+. Create a tunnel between your host and a host that is on the cluster network.
+
+Both options are presented as part of a practical use-case in the documentation
+for configuring xref:../install_config/routing_from_edge_lb.adoc#install-config-routing-from-edge-lb[routing from an
+edge load-balancer to containers within OpenShift SDN].
+
+[[using-flannel]]
+== Using Flannel
+As an alternate to the default SDN, {product-title} also provides Ansible
+playbooks for installing *flannel*-based networking. This is useful if running
+{product-title} within a cloud provider platform that also relies on SDN, such
+as Red Hat OpenStack Platform, and you want to avoid encapsulating packets twice
+through both platforms.
+
+Flannel uses a single IP network space for all of the containers allocating a
+contiguous subset of the space to each instance. Consequently, nothing prevents
+a container from attempting to contact any IP address in the same network
+space. This hinders multi-tenancy because the network cannot be used to isolate
+containers in one application from another.
+
+Depending on whether you prefer mutli-tenancy isolation or performance, you should determine the
+appropriate choice when deciding between OpenShift SDN (multi-tenancy) and flannel (performance)
+for internal networks.
+
+ifndef::openshift-origin[]
+[IMPORTANT]
+====
+Flannel is only supported for {product-title} on Red Hat OpenStack Platform.
+====
+endif::[]
+
+[IMPORTANT]
+====
+The current version of Neutron enforces port security on ports by default. This
+prevents the port from sending or receiving packets with a MAC address
+different from that on the port itself. Flannel creates virtual MACs and IP
+addresses and must send and receive packets on the port, so port security must
+be disabled on the ports that carry flannel traffic.
+====
+
+To enable flannel within your {product-title} cluster:
+
+. Neutron port security controls must be configured to be compatible with
+Flannel. The default configuration of Red Hat OpenStack Platform disables user
+control of `port_security`. Configure Neutron to allow users to control the
+`port_security` setting on individual ports.
++
+.. On the Neutron servers, add the following to the
+*_/etc/neutron/plugins/ml2/ml2_conf.ini_* file:
++
+----
+[ml2]
+...
+extension_drivers = port_security
+----
++
+.. Then, restart the Neutron services:
++
+----
+service neutron-dhcp-agent restart
+service neutron-ovs-cleanup restart
+service neutron-metadata-agentrestart
+service neutron-l3-agent restart
+service neutron-plugin-openvswitch-agent restart
+service neutron-vpn-agent restart
+service neutron-server  restart
+----
+
+. When creating the {product-title} instances on Red Hat OpenStack Platform, disable both port security and security
+groups in the ports where the container network flannel interface will be:
++
+----
+neutron port-update $port --no-security-groups --port-security-enabled=False
+----
++
+[NOTE]
+====
+Flannel gather information from etcd to configure and assign
+the subnets in the nodes. Therefore, the security group attached to the etcd
+hosts should allow access from nodes to port 2379/tcp, and nodes security
+group should allow egress communication to that port on the etcd hosts.
+====
+
+.. Set the following variables in your Ansible inventory file before running the
+installation:
++
+----
+openshift_use_openshift_sdn=false <1>
+openshift_use_flannel=true <2>
+flannel_interface=eth0
+----
+<1> Set `openshift_use_openshift_sdn` to `false` to disable the default SDN.
+<2> Set `openshift_use_flannel` to `true` to enable *flannel* in place.
+
+.. Optionally, you can specify the interface to use for inter-host communication
+using the `flannel_interface` variable. Without this variable, the
+{product-title} installation uses the default interface.
++
+[NOTE]
+====
+Custom networking CIDR for pods and services using flannel will be supported in a future release.
+link:https://bugzilla.redhat.com/show_bug.cgi?id=1473858[*BZ#1473858*]
+====
+
+. After the {product-title} installation, add a set of iptables rules on every {product-title} node:
++
+----
+iptables -A DOCKER -p all -j ACCEPT
+iptables -t nat -A POSTROUTING -o eth1 -j MASQUERADE
+----
++
+To persist those changes in the *_/etc/sysconfig/iptables_* use the following
+command on every node:
++
+----
+cp /etc/sysconfig/iptables{,.orig}
+sh -c "tac /etc/sysconfig/iptables.orig | sed -e '0,/:DOCKER -/ s/:DOCKER -/:DOCKER ACCEPT/' | awk '"\!"p && /POSTROUTING/{print \"-A POSTROUTING -o eth1 -j MASQUERADE\"; p=1} 1' | tac > /etc/sysconfig/iptables"
+----
++
+[NOTE]
+====
+The `iptables-save` command saves all the current _in memory_ iptables rules.
+However, because Docker, Kubernetes and {product-title} create a high number of iptables rules
+(services, etc.) not designed to be persisted, saving these rules can become problematic.
+====
+
+To isolate container traffic from the rest of the {product-title} traffic, Red Hat
+recommends creating an isolated tenant network and attaching all the nodes to it.
+If you are using a different network interface (eth1), remember to configure the
+interface to start at boot time through the
+*_/etc/sysconfig/network-scripts/ifcfg-eth1_* file:
+
+----
+DEVICE=eth1
+TYPE=Ethernet
+BOOTPROTO=dhcp
+ONBOOT=yes
+DEFTROUTE=no
+PEERDNS=no
+----

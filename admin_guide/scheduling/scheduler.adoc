@@ -1,0 +1,900 @@
+[[admin-guide-scheduler]]
+= Default Scheduling
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+
+toc::[]
+
+== Overview
+The default {product-title} pod scheduler is responsible for determining placement of new
+pods onto nodes within the cluster. It reads data from the pod and tries to find
+a node that is a good fit based on configured policies. It is completely
+independent and exists as a standalone/pluggable solution. It does not modify
+the pod and just creates a binding for the pod that ties the pod to the
+particular node.
+
+[[generic-scheduler]]
+== Generic Scheduler
+The existing generic scheduler is the default platform-provided scheduler
+_engine_ that selects a node to host the pod in a three-step operation:
+
+. The scheduler xref:filter-the-nodes[filters out inappropriate nodes using predicates].
+. The  scheduler xref:prioritize-filtered-list-nodes[prioritizes the filtered list of nodes].
+. The scheduler xref:select-best-fit-node[selects the highest priority node] for the pod.
+
+[[filter-the-nodes]]
+== Filter the Nodes
+The available nodes are filtered based on the constraints or requirements
+specified. This is done by running each node through the list of filter
+functions called xref:available-predicates[_predicates_].
+
+[[prioritize-filtered-list-nodes]]
+=== Prioritize the Filtered List of Nodes
+This is achieved by passing each node through a series of
+xref:available-priority-functions[_priority_ functions]
+that assign it a score between 0 - 10, with 0 indicating a bad fit and 10
+indicating a good fit to host the pod. The scheduler configuration can also take
+in a simple _weight_ (positive numeric value) for each priority function. The
+node score provided by each priority function is multiplied by the weight
+(default weight for most priorities is 1) and then combined by adding the scores for each node
+provided by all the priorities. This weight attribute can be used by
+administrators to give higher importance to some priorities.
+
+[[select-best-fit-node]]
+=== Select the Best Fit Node
+The nodes are sorted based on their scores and the node with the highest score
+is selected to host the pod. If multiple nodes have the same high score, then
+one of them is selected at random.
+
+[[scheduler-policy]]
+== Scheduler Policy
+The selection of the xref:available-predicates[predicate] and xref:available-priority-functions[priorities]
+defines the policy for the scheduler.
+
+The scheduler configuration file is a JSON file that specifies the predicates and priorities the scheduler
+will consider.
+
+In the absence of the scheduler policy file, the default configuration file,
+*_/etc/origin/master/scheduler.json_*, gets applied.
+
+[IMPORTANT]
+====
+The predicates and priorities defined in
+the scheduler configuration file completely override the default scheduler
+policy. If any of the default predicates and priorities are required,
+you must explicitly specify the functions in the scheduler configuration file.
+====
+
+[[default-scheduler-policy]]
+.Default scheduler configuration file
+[source,json]
+----
+{
+    "apiVersion": "v1",
+    "kind": "Policy",
+    "predicates": [
+        {
+            "name": "NoVolumeZoneConflict"
+        },
+        {
+            "name": "MaxEBSVolumeCount"
+        },
+        {
+            "name": "MaxGCEPDVolumeCount"
+        },
+        {
+            "name": "MaxAzureDiskVolumeCount"
+        },
+        {
+            "name": "MatchInterPodAffinity"
+        },
+        {
+            "name": "NoDiskConflict"
+        },
+        {
+            "name": "GeneralPredicates"
+        },
+        {
+            "name": "PodToleratesNodeTaints"
+        },
+        {
+            "name": "CheckNodeMemoryPressure"
+        },
+        {
+            "name": "CheckNodeDiskPressure"
+        },
+        {
+            "argument": {
+                "serviceAffinity": {
+                    "labels": [
+                        "region"
+                    ]
+                }
+            },
+            "name": "Region"
+
+         }
+    ],
+    "priorities": [
+        {
+            "name": "SelectorSpreadPriority",
+            "weight": 1
+        },
+        {
+            "name": "InterPodAffinityPriority",
+            "weight": 1
+        },
+        {
+            "name": "LeastRequestedPriority",
+            "weight": 1
+        },
+        {
+            "name": "BalancedResourceAllocation",
+            "weight": 1
+        },
+        {
+            "name": "NodePreferAvoidPodsPriority",
+            "weight": 10000
+        },
+        {
+            "name": "NodeAffinityPriority",
+            "weight": 1
+        },
+        {
+            "name": "TaintTolerationPriority",
+            "weight": 1
+        },
+        {
+            "argument": {
+                "serviceAntiAffinity": {
+                    "label": "zone"
+                }
+            },
+            "name": "Zone",
+            "weight": 2
+        }
+    ]
+}
+----
+
+[[modifying-scheduler-policy]]
+=== Modifying Scheduler Policy
+
+The scheduler policy is defined in a file on the master,
+named *_/etc/origin/master/scheduler.json_* by default,
+unless overridden by the `kubernetesMasterConfig.schedulerConfigFile`
+field in the
+xref:../../install_config/master_node_configuration.adoc#master-configuration-files[master configuration file].
+
+.Sample modified scheduler configuration file
+[source,json]
+----
+kind: "Policy"
+version: "v1"
+"predicates": [
+        {
+            "name": "PodFitsResources"
+        },
+        {
+            "name": "NoDiskConflict"
+        },
+        {
+            "name": "MatchNodeSelector"
+        },
+        {
+            "name": "HostName"
+        },
+        {
+            "argument": {
+                "serviceAffinity": {
+                    "labels": [
+                        "region"
+                    ]
+                }
+            },
+            "name": "Region"
+        }
+    ],
+    "priorities": [
+        {
+            "name": "LeastRequestedPriority",
+            "weight": 1
+        },
+        {
+            "name": "BalancedResourceAllocation",
+            "weight": 1
+        },
+        {
+            "name": "ServiceSpreadingPriority",
+            "weight": 1
+        },
+        {
+            "argument": {
+                "serviceAntiAffinity": {
+                    "label": "zone"
+                }
+            },
+            "name": "Zone",
+            "weight": 2
+        }
+    ]
+----
+
+To modify the scheduler policy:
+
+. Edit the scheduler configuration file to configure the desired
+xref:default-scheduler-policy[default predicates and priorities].
+You can create a custom configuration, or use and modify one of the
+xref:scheduler-sample-policies[sample policy configurations].
+
+. Add any xref:configurable-predicates[configurable predicates] and xref:configurable-priority-functions[configurable priorities]
+you require.
+
+. Restart the {product-title} for the changes to take effect.
++
+----
+# master-restart api
+# master-restart controllers
+----
+
+[[available-predicates]]
+== Available Predicates
+
+Predicates are rules that filter out unqualified nodes.
+
+There are several predicates provided by default in {product-title}. Some of
+these predicates can be customized by providing certain parameters. Multiple
+predicates can be combined to provide additional filtering of nodes.
+
+[[static-predicates]]
+=== Static Predicates
+These predicates do not take any configuration parameters or inputs from the
+user. These are specified in the scheduler configuration using their exact
+name.
+
+**_NoVolumeZoneConflict_** checks that the volumes a pod requests
+are available in the zone. _The default scheduler policy includes this predicate._
+----
+{"name" : "NoVolumeZoneConflict"}
+----
+
+**_MaxEBSVolumeCount_** checks the maximum number of volumes that can be attached to an AWS instance.
+_The default scheduler policy includes this predicate._
+----
+{"name" : "MaxEBSVolumeCount"}
+----
+
+**_MaxGCEPDVolumeCount_** checks the maximum number of Google Compute Engine (GCE) Persistent Disks (PD).
+_The default scheduler policy includes this predicate._
+----
+{"name" : "MaxGCEPDVolumeCount"}
+----
+
+**_MatchInterPodAffinity_** checks if the pod affinity/antiaffinity rules permit the pod.
+_The default scheduler policy includes this predicate._
+----
+{"name" : "MatchInterPodAffinity"}
+----
+
+**_NoDiskConflict_** checks if the volume requested by a pod is available.
+_The default scheduler policy includes this predicate._
+----
+{"name" : "NoDiskConflict"}
+----
+
+**_PodToleratesNodeTaints_** checks if a pod can tolerate the node taints.
+_The default scheduler policy includes this predicate._
+----
+{"name" : "PodToleratesNodeTaints"}
+----
+
+**_CheckNodeMemoryPressure_** checks if a pod can be scheduled on a node with a memory pressure condition.
+_The default scheduler policy includes this predicate._
+----
+{"name" : "CheckNodeMemoryPressure"}
+----
+
+**_CheckNodeDiskPressure_** checks if a pod can be scheduled on a node with a disk pressure condition.
+_The default scheduler policy includes this predicate._
+----
+{"name" : "CheckNodeDiskPressure"}
+----
+
+**_CheckVolumeBinding_** evaluates if a pod can fit based on the volumes, it requests, for both bound and unbound PVCs.
+* For PVCs that are bound, the predicate checks that the corresponding PV's node affinity is satisfied by the given node.
+* For PVCs that are unbound, the predicate searched for available PVs that can satisfy the PVC requirements and that
+the PV node affinity is satisfied by the given node.
+
+The predicate returns true if all bound PVCs have compatible PVs with the node, and if all unbound PVCs can be matched with an available and node-compatible PV.
+----
+{"name" : "CheckVolumeBinding"}
+----
+
+The `CheckVolumeBinding` predicate must be enabled in non-default schedulers.
+
+**_CheckNodeCondition_** checks if a pod can be scheduled on a node reporting *out of disk*, *network unavailable*, or *not ready* conditions.
+----
+{"name" : "CheckNodeCondition"}
+----
+
+**_PodToleratesNodeNoExecuteTaints_** checks if a pod tolerations can tolerate a node *NoExecute* taints.
+----
+{"name" : "PodToleratesNodeNoExecuteTaints"}
+----
+
+**_CheckNodeLabelPresence_** checks if all of the specified labels exist on a node, regardless of their value.
+----
+{"name" : "CheckNodeLabelPresence"}
+----
+
+**_checkServiceAffinity_** checks that ServiceAffinity labels are homogeneous for pods that are scheduled on a node.
+----
+{"name" : "checkServiceAffinity"}
+----
+
+**_MaxAzureDiskVolumeCount_**  checks the maximum number of Azure Disk Volumes.
+----
+{"name" : "MaxAzureDiskVolumeCount"}
+----
+
+[[admin-guide-scheduler-general-predicates]]
+=== General Predicates
+
+The following general predicates check whether non-critical predicates and essential predicates pass. Non-critical predicates are the predicates
+that only non-critical pods need to pass and essential predicates are the predicates that all pods need to pass.
+
+_The default scheduler policy includes the general predicates._
+
+[discrete]
+==== Non-critical general predicates
+
+**_PodFitsResources_** determines a fit based on resource availability
+(CPU, memory, GPU, and so forth). The
+nodes can declare their resource capacities and then pods can specify what
+resources they require. Fit is based on requested, rather than used
+resources.
+----
+{"name" : "PodFitsResources"}
+----
+[discrete]
+==== Essential general predicates
+
+**_PodFitsHostPorts_** determines if a node has free ports for the requested pod ports (absence
+of port conflicts).
+----
+{"name" : "PodFitsHostPorts"}
+----
+
+**_HostName_** determines fit based on the presence of the Host parameter
+and a string match with the name of the host.
+----
+{"name" : "HostName"}
+----
+
+**_MatchNodeSelector_** determines fit based on
+xref:../../admin_guide/scheduling/node_selector.adoc#admin-guide-sched-selector[node selector (nodeSelector)] queries
+defined in the pod.
+----
+{"name" : "MatchNodeSelector"}
+----
+
+[[configurable-predicates]]
+=== Configurable Predicates
+You can configure these predicates in the scheduler configuration,
+by default *_/etc/origin/master/scheduler.json_*, to add labels to affect
+how the predicate functions.
+
+Since these are configurable, multiple predicates
+of the same type (but different configuration parameters) can be combined as
+long as their user-defined names are different.
+
+For information on using these priorities,
+see xref:modifying-scheduler-policy[Modifying Scheduler Policy].
+
+**_ServiceAffinity_** places pods on nodes based on the service running on that pod.
+Placing pods of the same service on the same or co-located nodes can lead to higher efficiency.
+
+This predicate attempts to place pods with specific labels
+in its xref:../../admin_guide/scheduling/node_selector.adoc#admin-guide-sched-selector[node selector]
+on nodes that have the same label.
+
+If the pod does not specify the labels in its
+node selector, then the first pod is placed on any node based on availability
+and all subsequent pods of the service are scheduled on nodes that have the
+same label values as that node.
+
+[source,json]
+----
+"predicates":[
+      {
+         "name":"<name>", <1>
+         "argument":{
+            "serviceAffinity":{
+               "labels":[
+                  "<label>" <2>
+               ]
+            }
+         }
+      }
+   ],
+----
+<1> Specify a name for the predicate.
+<2> Specify a label to match.
+
+For example:
+
+[source,json]
+----
+        "name":"ZoneAffinity",
+        "argument":{
+            "serviceAffinity":{
+                "labels":[
+                    "rack"
+                ]
+            }
+        }
+----
+
+For example. if the first pod of a service had a node selector `rack` was scheduled to a node with label `region=rack`,
+all the other subsequent pods belonging to the same service will be scheduled on nodes
+with the same `region=rack` label. For more information,
+see xref:../../admin_guide/scheduling/pod_placement.adoc#controlling-pod-placement[Controlling Pod Placement].
+
+Multiple-level labels are also supported. Users can also specify all pods for a service to
+be scheduled on nodes within the same region and within the same zone (under the region).
+
+The `labelsPresence` parameter checks whether a particular node has a specific label. The labels create node _groups_ that the
+`LabelPreference` priority uses. Matching by label can be useful, for example, where nodes have their physical location or status defined by labels.
+
+[source,json]
+----
+"predicates":[
+      {
+         "name":"<name>", <1>
+         "argument":{
+            "labelsPresence":{
+               "labels":[
+                  "<label>" <2>
+                ],
+                "presence": true <3>
+            }
+         }
+      }
+   ],
+----
+<1> Specify a name for the predicate.
+<2> Specify a label to match.
+<3> Specify whether the labels are required, either `true` or `false`.
++
+* For `presence:false`, if any of the requested labels are present in the node labels,
+the pod cannot be scheduled. If the labels are not present, the pod can be scheduled.
++
+* For `presence:true`, if all of the requested labels are present in the node labels,
+the pod can be scheduled. If all of the labels are not present, the pod is not scheduled.
+
+For example:
+
+[source,json]
+----
+        "name":"RackPreferred",
+        "argument":{
+            "labelsPresence":{
+                "labels":[
+                    "rack",
+                    "region"
+                ],
+                "presence": true
+            }
+        }
+----
+
+[[available-priority-functions]]
+== Available Priorities
+
+Priorities are rules that rank remaining nodes according to preferences.
+
+A custom set of priorities can be specified to configure the scheduler.
+There are several priorities provided by default in {product-title}.
+Other priorities can be customized by providing certain
+parameters. Multiple priorities can be combined and different weights
+can be given to each in order to impact the prioritization.
+
+[[static-priority-functions]]
+=== Static Priorities
+
+Static priorities do not take any configuration parameters from
+the user, except weight. A weight is required to be specified and cannot be 0 or negative.
+
+These are specified in the scheduler configuration,
+by default *_/etc/origin/master/scheduler.json_*.
+
+The default scheduler policy includes the priorities noted in the list. Each of
+the priority function has a weight of `1` except `*NodePreferAvoidPodsPriority*`,
+which has a weight of `10000`:
+
+**_SelectorSpreadPriority_** looks for services, replication controllers (RC),
+replication sets (RS), and stateful sets that match the pod,
+then finds existing pods that match those selectors.
+The scheduler favors nodes that have fewer existing matching pods. Then, it schedules the pod on a node with the smallest number of
+pods that match those selectors as the pod being scheduled.
+_The default scheduler policy includes this priority._
+----
+{"name" : "SelectorSpreadPriority", "weight" : 1}
+----
+
+**_InterPodAffinityPriority_** computes a sum by iterating through the elements of `weightedPodAffinityTerm` and adding
+_weight_ to the sum if the corresponding PodAffinityTerm is satisfied for that node. The node(s) with the highest sum are the most preferred.
+_The default scheduler policy includes this priority._
+----
+{"name" : "InterPodAffinityPriority", "weight" : 1}
+----
+
+**_LeastRequestedPriority_** favors nodes with fewer requested resources. It
+calculates the percentage of memory and CPU requested by pods scheduled on the
+node, and prioritizes nodes that have the highest available/remaining capacity.
+_The default scheduler policy includes this priority._
+----
+{"name" : "LeastRequestedPriority", "weight" : 1}
+----
+
+**_BalancedResourceAllocation_** favors nodes with balanced resource usage rate.
+It calculates the difference between the consumed CPU and memory as a fraction
+of capacity, and prioritizes the nodes based on how close the two metrics are to
+each other. This should always be used together with `LeastRequestedPriority`.
+_The default scheduler policy includes this priority._
+----
+{"name" : "BalancedResourceAllocation", "weight" : 1}
+----
+
+**_NodePreferAvoidPodsPriority_** ignores pods that are owned by a controller other than a replication controller.
+_The default scheduler policy includes this priority._
+----
+{"name" : "NodePreferAvoidPodsPriority", "weight" : 10000}
+----
+
+**_NodeAffinityPriority_** prioritizes nodes according to node affinity scheduling preferences
+_The default scheduler policy includes this priority._
+----
+{"name" : "NodeAffinityPriority", "weight" : 1}
+----
+
+**_TaintTolerationPriority_** prioritizes nodes that have a fewer number of _intolerable_ taints on them for a pod. An intolerable taint is one which has key `PreferNoSchedule`.
+_The default scheduler policy includes this priority._
+----
+{"name" : "TaintTolerationPriority", "weight" : 1}
+----
+
+**_EqualPriority_** gives an equal weight of `1` to all nodes, if no priority
+configurations are provided. We recommend using this priority only for testing environments.
+----
+{"name" : "EqualPriority", "weight" : 1}
+----
+
+//https://github.com/kubernetes/kubernetes/issues/41712
+**_MostRequestedPriority_** prioritizes nodes with most requested resources. It calculates the percentage of memory and CPU
+requested by pods scheduled on the node, and prioritizes based on the maximum of the average of the fraction of requested to capacity.
+
+----
+{"name" : "MostRequestedPriority", "weight" : 1}
+----
+
+**_ImageLocalityPriority_** prioritizes nodes that already have requested pod container's images.
+----
+{"name" : "ImageLocalityPriority", "weight" : 1}
+----
+
+**_ServiceSpreadingPriority_** spreads pods by minimizing the number of pods
+belonging to the same service onto the same machine.
+----
+{"name" : "ServiceSpreadingPriority", "weight" : 1}
+----
+
+[[configurable-priority-functions]]
+=== Configurable Priorities
+
+You can configure these priorities in the scheduler configuration,
+by default *_/etc/origin/master/scheduler.json_*, to add labels to affect
+how the priorities.
+
+The type of the priority
+function is identified by the argument that they take. Since these are
+configurable, multiple priorities of the same type (but different
+configuration parameters) can be combined as long as their user-defined names
+are different.
+
+For information on using these priorities,
+see xref:modifying-scheduler-policy[Modifying Scheduler Policy].
+
+**_ServiceAntiAffinity_** takes a label and ensures a good spread of the pods
+belonging to the same service across the group of nodes based on the label
+values. It gives the same score to all nodes that have the same value for the
+specified label. It gives a higher score to nodes within a group with the least
+concentration of pods.
+
+[source,json]
+----
+"priorities":[
+    {
+        "name":"<name>", <1>
+        "weight" : 1 <2>
+        "argument":{
+            "serviceAntiAffinity":{
+                "label":[
+                    "<label>" <3>
+                ]
+            }
+        }
+    }
+]
+----
+<1> Specify a name for the priority.
+<2> Specify a weight. Enter a non-zero positive value.
+<3> Specify a label to match.
+
+For example:
+
+[source,json]
+----
+        "name":"RackSpread", <1>
+        "weight" : 1 <2>
+        "argument":{
+            "serviceAntiAffinity":{
+                "label": "rack" <3>
+            }
+        }
+----
+<1> Specify a name for the priority.
+<2> Specify a weight. Enter a non-zero positive value.
+<3> Specify a label to match.
+
+[NOTE]
+====
+In some situations using `ServiceAntiAffinity` based on custom labels does not spread pod as expected. 
+See link:https://access.redhat.com/solutions/3432401[this Red Hat Solution]. 
+====
+
+*The `labelPreference` parameter gives priority based on the specified label. 
+If the label is present on a node, that node is given priority.
+If no label is specified, priority is given to nodes that do not have a label.
+
+[source,json]
+----
+"priorities":[
+    {
+        "name":"<name>", <1>
+        "weight" : 1, <2>
+        "argument":{
+            "labelPreference":{
+                "label": "<label>", <3> 
+                "presence": true <4>
+            }
+        }
+    }
+]
+----
+<1> Specify a name for the priority.
+<2> Specify a weight. Enter a non-zero positive value.
+<3> Specify a label to match.
+<4> Specify whether the label is required, either `true` or `false`.
+
+[[use-cases]]
+== Use Cases
+
+One of the important use cases for scheduling within {product-title} is to
+support flexible affinity and anti-affinity policies.
+ifdef::openshift-enterprise,openshift-origin[]
+
+[[infrastructure-topological-levels]]
+=== Infrastructure Topological Levels
+
+Administrators can define multiple topological levels for their infrastructure
+(nodes) by specifying
+xref:../../admin_guide/manage_nodes.adoc#updating-labels-on-nodes[labels on nodes]
+(e.g., `region=r1`, `zone=z1`, `rack=s1`).
+
+These label names have no particular meaning and
+administrators are free to name their infrastructure levels anything
+(eg, city/building/room). Also, administrators can define any number of levels
+for their infrastructure topology, with three levels usually being adequate
+(such as: `regions` -> `zones` -> `racks`).  Administrators can specify affinity
+and anti-affinity rules at each of these levels in any combination.
+endif::openshift-enterprise,openshift-origin[]
+
+[[affinity]]
+=== Affinity
+
+Administrators should be able to configure the scheduler to specify affinity at
+any topological level, or even at multiple levels. Affinity at a particular
+level indicates that all pods that belong to the same service are scheduled
+onto nodes that belong to the same level. This handles any latency requirements
+of applications by allowing administrators to ensure that peer pods do not end
+up being too geographically separated. If no node is available within the same
+affinity group to host the pod, then the pod is not scheduled.
+
+If you need greater control over where the pods are scheduled, see
+xref:../../admin_guide/scheduling/node_affinity.adoc#admin-guide-sched-affinity[Using Node Affinity]
+and  xref:../../admin_guide/scheduling/pod_affinity.adoc#admin-guide-sched-pod-affinity[Using Pod Affinity and Anti-affinity].
+These advanced scheduling features allow administrators
+to specify which node a pod can be scheduled on and to force or reject scheduling relative to other pods.
+
+
+[[anti-affinity]]
+=== Anti Affinity
+
+Administrators should be able to configure the scheduler to specify
+anti-affinity at any topological level, or even at multiple levels.
+Anti-affinity (or 'spread') at a particular level indicates that all pods that
+belong to the same service are spread across nodes that belong to that
+level. This ensures that the application is well spread for high availability
+purposes. The scheduler tries to balance the service pods across all
+applicable nodes as evenly as possible.
+
+If you need greater control over where the pods are scheduled, see
+xref:../../admin_guide/scheduling/node_affinity.adoc#admin-guide-sched-affinity[Using Node Affinity]
+and  xref:../../admin_guide/scheduling/pod_affinity.adoc#admin-guide-sched-pod-affinity[Using Pod Affinity and Anti-affinity].
+These advanced scheduling features allow administrators
+to specify which node a pod can be scheduled on and to force or reject scheduling relative to other pods.
+
+[[scheduler-sample-policies]]
+== Sample Policy Configurations
+
+The configuration below specifies the default scheduler configuration, if it
+were to be specified via the scheduler policy file.
+
+----
+kind: "Policy"
+version: "v1"
+predicates:
+...
+  - name: "RegionZoneAffinity" <1>
+    argument:
+      serviceAffinity: <2>
+        labels: <3>
+          - "region"
+          - "zone"
+priorities:
+...
+  - name: "RackSpread" <4>
+    weight: 1
+    argument:
+      serviceAntiAffinity: <5>
+        label: "rack" <6>
+----
+
+<1> The name for the predicate.
+<2> The xref:available-predicates[type of predicate].
+<3> The labels for the predicate.
+<4> The name for the priority.
+<5> The xref:available-priority-functions[type of priority].
+<6> The labels for the priority.
+
+In all of the sample configurations below, the list of predicates and priority
+functions is truncated to include only the ones that pertain to the use case
+specified.  In practice, a complete/meaningful scheduler policy should include
+most, if not all, of the default predicates and priorities listed above.
+
+The following example defines three topological levels, region (affinity) -> zone (affinity) -> rack (anti-affinity):
+
+[source,yaml]
+----
+kind: "Policy"
+version: "v1"
+predicates:
+...
+  - name: "RegionZoneAffinity"
+    argument:
+      serviceAffinity:
+        labels:
+          - "region"
+          - "zone"
+priorities:
+...
+  - name: "RackSpread"
+    weight: 1
+    argument:
+      serviceAntiAffinity:
+        label: "rack"
+----
+
+The following example defines three topological levels, city (affinity) -> building
+(anti-affinity) -> room (anti-affinity):
+
+[source,yaml]
+----
+kind: "Policy"
+version: "v1"
+predicates:
+...
+  - name: "CityAffinity"
+    argument:
+      serviceAffinity:
+        labels:
+          - "city"
+priorities:
+...
+  - name: "BuildingSpread"
+    weight: 1
+    argument:
+      serviceAntiAffinity:
+        label: "building"
+  - name: "RoomSpread"
+    weight: 1
+    argument:
+      serviceAntiAffinity:
+        label: "room"
+----
+
+The following example defines a policy to only use nodes with the 'region' label defined and prefer nodes with the 'zone'
+label defined:
+
+[source,yaml]
+----
+kind: "Policy"
+version: "v1"
+predicates:
+...
+  - name: "RequireRegion"
+    argument:
+      labelsPresence:
+        labels:
+          - "region"
+        presence: true
+priorities:
+...
+  - name: "ZonePreferred"
+    weight: 1
+    argument:
+      labelPreference:
+        label: "zone"
+        presence: true
+----
+
+The following example combines both static and configurable predicates and
+also priorities:
+
+[source,yaml]
+----
+kind: "Policy"
+version: "v1"
+predicates:
+...
+  - name: "RegionAffinity"
+    argument:
+      serviceAffinity:
+        labels:
+          - "region"
+  - name: "RequireRegion"
+    argument:
+      labelsPresence:
+        labels:
+          - "region"
+        presence: true
+  - name: "BuildingNodesAvoid"
+    argument:
+      labelsPresence:
+        labels:
+          - "building"
+        presence: false
+  - name: "PodFitsPorts"
+  - name: "MatchNodeSelector"
+priorities:
+...
+  - name: "ZoneSpread"
+    weight: 2
+    argument:
+      serviceAntiAffinity:
+        label: "zone"
+  - name: "ZonePreferred"
+    weight: 1
+    argument:
+      labelPreference:
+        label: "zone"
+        presence: true
+  - name: "ServiceSpreadingPriority"
+    weight: 1
+----

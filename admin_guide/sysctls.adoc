@@ -1,0 +1,196 @@
+[[admin-guide-sysctls]]
+= Sysctls
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+
+toc::[]
+
+== Overview
+
+Sysctl settings are exposed via Kubernetes, allowing users to modify certain
+kernel parameters at runtime for namespaces within a container. Only sysctls
+that are namespaced can be set independently on pods. If a sysctl is not
+namespaced, called _node-level_, it cannot be set within {product-title}.
+Moreover, only those sysctls considered _safe_ are whitelisted by default; you
+can manually enable other _unsafe_ sysctls on the node to be available to the
+user.
+
+[[undersatnding-sysctls]]
+== Understanding sysctls
+
+In Linux, the sysctl interface allows an administrator to modify kernel
+parameters at runtime. Parameters are available via the *_/proc/sys/_* virtual
+process file system. The parameters cover various subsystems, such as:
+
+- kernel (common prefix: *_kernel._*)
+- networking (common prefix: *_net._*)
+- virtual memory (common prefix: *_vm._*)
+- MDADM (common prefix: *_dev._*)
+
+More subsystems are described in
+link:https://www.kernel.org/doc/Documentation/sysctl/README[Kernel documentation]. To get a list of all parameters, you can run:
+
+----
+$ sudo sysctl -a
+----
+
+[[namespaced-vs-node-level-sysctls]]
+== Namespaced versus node-level sysctls
+
+A number of sysctls are _namespaced_ in today’s Linux kernels. This means that
+you can set them independently for each pod on a node. Being namespaced is a
+requirement for sysctls to be accessible in a pod context within Kubernetes.
+
+The following sysctls are known to be namespaced:
+
+- *_kernel.shm*_*
+- *_kernel.msg*_*
+- *_kernel.sem_*
+- *_fs.mqueue.*_*
+
+Additionally, most of the sysctls in the *_net.*_* group are known
+to be namespaced. Their namespace adoption differs based on the kernel
+version and distributor.
+
+To check which *_net.*_* sysctls are namespaced on your system, run the
+following command:
+
+----
+$ podman run --rm -ti docker.io/fedora \
+    /bin/sh -c "dnf install -y findutils && find /proc/sys/ \
+    | grep -e /proc/sys/net"
+----
+
+Sysctls that are not namespaced are called _node-level_ and must be set
+manually by the cluster administrator, either by means of the underlying Linux
+distribution of the nodes, such as by modifying the *_/etc/sysctls.conf_* file,
+or by using a DaemonSet with privileged containers.
+
+[NOTE]
+====
+Consider marking nodes with special sysctls as tainted. Only schedule pods onto
+them that need those sysctl settings. Use the
+xref:../admin_guide/scheduling/taints_tolerations.adoc#admin-guide-taints[taints
+and toleration feature] to mark the nodes.
+====
+
+[[safe-vs-unsafe-sysclts]]
+== Safe versus unsafe sysctls
+
+Sysctls are grouped into _safe_ and _unsafe_ sysctls. In addition to proper
+namespacing, a safe sysctl must be properly isolated between pods on the same
+node. This means that if you set a sysctl as safe for one pod it must not:
+
+- Influence any other pod on the node
+- Harm the node's health
+- Gain CPU or memory resources outside of the resource limits of a pod
+
+By far, most of the namespaced sysctls are not necessarily considered safe.
+
+Currently, {product-title} supports, or whitelists, the following sysctls
+in the safe set:
+
+- *_kernel.shm_rmid_forced_*
+- *_net.ipv4.ip_local_port_range_*
+- *_net.ipv4.tcp_syncookies_*
+
+This list might be extended in future versions when the kubelet supports better
+isolation mechanisms.
+
+All safe sysctls are enabled by default. All unsafe sysctls are disabled by
+default, and the cluster administrator must manually enable them on a per-node
+basis. Pods with disabled unsafe sysctls will be scheduled but will fail to
+launch.
+
+[[enabling-unsafe-sysctls]]
+== Enabling unsafe sysctls
+
+The cluster administrator can allow certain unsafe sysctls for very special
+situations such as high-performance or real-time application tuning.
+
+If you want to use unsafe sysctls, cluster administrators must enable them
+individually on nodes. They can enable only namespaced sysctls.
+
+[WARNING]
+====
+Due to their nature of being unsafe, the use of unsafe sysctls is
+at-your-own-risk and can lead to severe problems like wrong behavior of
+containers, resource shortage, or complete breakage of a node.
+====
+
+. Use the `*kubeletArguments*` field in the *_/etc/origin/node/node-config.yaml_*
+file, as described in
+xref:../admin_guide/manage_nodes.adoc#configuring-node-resources[Configuring Node Resources], to set the desired unsafe sysctls:
++
+----
+kubeletArguments:
+  allowed-unsafe-sysctls:
+    - "kernel.msg*,net.ipv4.route.min_pmtu"
+----
+
+. Restart the node service to apply the changes:
++
+ifdef::openshift-enterprise[]
+----
+# systemctl restart atomic-openshift-node
+----
+endif::[]
+ifdef::openshift-origin[]
+----
+# systemctl restart origin-node
+----
+endif::[]
+
+[[setting-sysctls-for-a-pod]]
+== Setting sysctls for a pod
+
+Sysctls are set on pods using the pod's `securityContext`. The `securityContext`
+applies to all containers in the same pod.
+
+The following example uses the pod `securityContext` to set a safe sysctl
+`kernel.shm_rmid_forced` and two unsafe sysctls, `net.ipv4.route.min_pmtu` and
+`kernel.msgmax`. There is no distinction between _safe_ and _unsafe_ sysctls in
+the specification.
+
+[WARNING]
+====
+To avoid destabilizing your operating system, modify sysctl parameters only 
+after you understand their effects.
+====
+
+Modify the YAML file that defines the pod and add the `securityContext` spec, as
+shown in the following example:
+
+[source,yaml]
+----
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sysctl-example
+spec:
+  securityContext:
+    sysctls:
+    - name: kernel.shm_rmid_forced
+      value: "0"
+    - name: net.ipv4.route.min_pmtu
+      value: "552"
+    - name: kernel.msgmax
+      value: "65536"
+  ...
+----
+
+[NOTE]
+====
+A pod with the unsafe sysctls specified above will fail to launch on any node
+that the admin has not explicitly enabled those two unsafe sysctls. As with
+node-level sysctls, use the
+xref:../admin_guide/scheduling/taints_tolerations.adoc#admin-guide-taints[taints and
+toleration feature] or
+xref:../admin_guide/manage_nodes.adoc#updating-labels-on-nodes[labels on nodes]
+to schedule those pods onto the right nodes.
+====

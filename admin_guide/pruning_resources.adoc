@@ -1,0 +1,735 @@
+[[admin-guide-pruning-resources]]
+= Pruning objects
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+
+toc::[]
+
+== Overview
+Over time, xref:../architecture/core_concepts/index.adoc#architecture-core-concepts-index[API objects] created in
+{product-title} can accumulate in the
+xref:../architecture/infrastructure_components/kubernetes_infrastructure.adoc#master[etcd
+data store] through normal user operations, such as when building and deploying
+applications.
+
+As an administrator, you can periodically prune older versions of objects from
+your {product-title} instance that are no longer needed. For example, by pruning
+images you can delete older images and layers that are no longer in use, but are
+still taking up disk space.
+
+[[prune-operations]]
+
+== Basic prune operations
+The CLI groups prune operations under a common parent command.
+
+----
+$ oc adm prune <object_type> <options>
+----
+
+This specifies:
+
+- The `<object_type>` to perform the action on, such as `groups`, `builds`,
+`deployments`, or `images`.
+- The `<options>` supported to prune that object type.
+
+[[pruning-groups]]
+
+== Pruning groups
+
+To prune groups records from an external provider, administrators can
+run the following command:
+
+---
+$ oc adm prune groups --sync-config=path/to/sync/config [<options>]
+---
+
+.Prune groups CLI configuration options
+[cols="4,8",options="header"]
+|===
+
+|Options |Description
+
+.^|`--confirm`
+|Indicate that pruning should occur, instead of performing a dry-run.
+
+.^|`--blacklist`
+|Path to the group blacklist file.
+See xref:../install_config/syncing_groups_with_ldap.adoc#overview[Syncing Groups With LDAP]
+for the blacklist file structure.
+
+.^|`--whitelist`
+|Path to the group whitelist file.
+See xref:../install_config/syncing_groups_with_ldap.adoc#overview[Syncing Groups With LDAP]
+for the whitelist file structure.
+
+.^|`--sync-config`
+|Path to the synchronization configuration file.
+See xref:../install_config/syncing_groups_with_ldap.adoc#configuring-ldap-sync[Configuring LDAP Sync]
+for the structure of this file.
+|===
+
+To see the groups that the prune command deletes:
+
+----
+$ oc adm prune groups --sync-file=ldap-sync-config.yaml
+----
+
+To perform the prune operation:
+
+----
+$ oc adm prune groups --sync-file=ldap-sync-config.yaml --confirm
+----
+
+[[pruning-deployments]]
+
+== Pruning deployments
+
+In order to prune deployments that are no longer required by the system due to
+age and status, administrators may run the following command:
+
+----
+$ oc adm prune deployments [<options>]
+----
+
+.Prune deployments CLI configuration options
+[cols="4,8",options="header"]
+|===
+
+|Option |Description
+
+.^|`--confirm`
+|Indicate that pruning should occur, instead of performing a dry-run.
+
+.^|`--orphans`
+|Prune all deployments whose deployment config no longer exists, status is
+complete or failed, and replica count is zero.
+
+.^|`--keep-complete=<N>`
+|Per deployment config, keep the last N deployments whose status is complete and
+replica count is zero. (default `5`)
+
+.^|`--keep-failed=<N>`
+|Per deployment config, keep the last N deployments whose status is failed and
+replica count is zero. (default `1`)
+
+.^|`--keep-younger-than=<duration>`
+|Do not prune any object that is younger than `<duration>` relative to the
+current time. (default `60m`) Valid units of measurement include nanoseconds
+(`ns`), microseconds (`us`), milliseconds (`ms`), seconds (`s`), minutes (`m`),
+and hours (`h`).
+|===
+
+To see what a pruning operation would delete:
+
+----
+$ oc adm prune deployments --orphans --keep-complete=5 --keep-failed=1 \
+    --keep-younger-than=60m
+----
+
+To actually perform the prune operation:
+
+----
+$ oc adm prune deployments --orphans --keep-complete=5 --keep-failed=1 \
+    --keep-younger-than=60m --confirm
+----
+
+[[pruning-builds]]
+
+== Pruning builds
+
+In order to prune builds that are no longer required by the system due to age
+and status, administrators may run the following command:
+
+----
+$ oc adm prune builds [<options>]
+----
+
+.Prune builds CLI configuration options
+[cols="4,8",options="header"]
+|===
+
+|Option |Description
+
+.^|`--confirm`
+|Indicate that pruning should occur, instead of performing a dry-run.
+
+.^|`--orphans`
+|Prune all builds whose build config no longer exists, status is complete,
+failed, error, or canceled.
+
+.^|`--keep-complete=<N>`
+|Per build config, keep the last N builds whose status is complete. (default
+`5`)
+
+.^|`--keep-failed=<N>`
+|Per build config, keep the last N builds whose status is failed, error, or
+canceled (default `1`)
+
+.^|`--keep-younger-than=<duration>`
+|Do not prune any object that is younger than `<duration>` relative to the
+current time. (default `60m`)
+|===
+
+To see what a pruning operation would delete:
+
+----
+$ oc adm prune builds --orphans --keep-complete=5 --keep-failed=1 \
+    --keep-younger-than=60m
+----
+
+To actually perform the prune operation:
+
+----
+$ oc adm prune builds --orphans --keep-complete=5 --keep-failed=1 \
+    --keep-younger-than=60m --confirm
+----
+
+[NOTE]
+====
+Developers can enable xref:../dev_guide/builds/advanced_build_operations.adoc#build-pruning[automatic build pruning]
+by modifying their build configuration.
+====
+
+[[pruning-images]]
+
+== Pruning images
+
+In order to prune images that are no longer required by the system due to age,
+status, or exceed limits, administrators may run the following command:
+
+----
+$ oc adm prune images [<options>]
+----
+
+[NOTE]
+====
+Currently, to prune images you must first
+xref:../cli_reference/get_started_cli.adoc#basic-setup-and-login[log in to the
+CLI] as a user with an
+xref:../architecture/additional_concepts/authentication.adoc#oauth[access
+token]. The user must also have the
+xref:../architecture/additional_concepts/authorization.adoc#roles[cluster role]
+*system:image-pruner* or greater (for example, *cluster-admin*).
+====
+
+ifdef::openshift-enterprise,openshift-origin[]
+[NOTE]
+====
+Pruning images removes data from the integrated registry unless `--prune-registry=false`
+is used. For this operation to work properly, ensure your
+xref:../install_config/registry/extended_registry_configuration.adoc#docker-registry-configuration-reference-storage[registry is configured] with `*storage:delete:enabled*` set to *true*.
+====
+endif::[]
+
+[NOTE]
+====
+Pruning images with the `--namespace` flag does not remove images, only image
+streams. Images are non-namespaced resources. Therefore, limiting pruning to a
+particular namespace makes it impossible to calculate their current usage.
+====
+
+ifdef::openshift-enterprise,openshift-origin[]
+By default the integrated registry caches blobs metadata to reduce the number of
+requests to storage, and increase the speed of processing the request. Pruning
+does not update the integrated registry cache. Images pushed after pruning that
+contain pruned layers will be broken, because the pruned layers that have
+metadata in the cache will not be pushed. Therefore it is necessary to clear the
+cache after pruning. This can be accomplished by redeploying the registry:
+
+----
+$ oc rollout latest dc/docker-registry
+----
+
+If the integrated registry uses a
+xref:../install_config/registry/extended_registry_configuration.adoc#docker-registry-configuration-reference-redis[redis
+cache], you need to clean the database manually.
+
+If redeploying the registry after pruning is not an option, then you must
+xref:../install_config/registry/extended_registry_configuration.adoc#docker-registry-configuration-reference-cache[permanently
+disable the cache].
+endif::[]
+
+.Prune images CLI configuration options
+[cols="4,8",options="header"]
+|===
+
+|Option |Description
+
+.^|`--all`
+|Include images that were not pushed to the registry, but have been mirrored by
+pullthrough. This is on by default. To limit the pruning to images that were
+pushed to the integrated registry, pass `--all=false`.
+
+.^|`--certificate-authority`
+|The path to a certificate authority file to use when communicating with the
+{product-title}-managed registries. Defaults to the certificate authority data
+from the current user's configuration file. If provided, secure connection will
+be initiated.
+
+.^|`--confirm`
+|Indicate that pruning should occur, instead of performing a dry-run. This
+requires a valid route to the integrated container image registry. If this command is
+run outside of the cluster network, the route needs to be provided using
+`--registry-url`.
+
+.^|`--force-insecure`
+|*Use caution with this option.* Allow an insecure connection to the Docker
+registry that is hosted via HTTP or has an invalid HTTPS certificate. See
+xref:pruning-images-secure-or-insecure[Using Secure or Insecure Connections]
+for more information.
+
+.^|`--keep-tag-revisions=<N>`
+|For each image stream, keep up to at most N image revisions per tag. (default
+`3`)
+
+.^|`--keep-younger-than=<duration>`
+|Do not prune any image that is younger than `<duration>` relative to the
+current time. Do not prune any image that is referenced by any other object that
+is younger than `<duration>` relative to the current time. (default *60m*)
+
+.^|`--prune-over-size-limit`
+|Prune each image that exceeds the smallest xref:limits.adoc#image-limits[limit]
+defined in the same project. This flag cannot be combined with `--keep-tag-revisions`
+nor `--keep-younger-than`.
+
+.^|`--registry-url`
+|The address to use when contacting the registry. The command will attempt to
+use a cluster-internal URL determined from managed images and image streams. In
+case it fails (the registry cannot be resolved or reached), an alternative
+route that works needs to be provided using this flag. The registry host name
+may be prefixed by `https://` or `http://` which will enforce particular
+connection protocol.
+
+.^|`--prune-registry`
+|In conjunction with the conditions stipulated by the other options, this option controls
+whether the data in the registry corresponding to the {product-title} Image API Objects
+is pruned. By default, image pruning processes both the
+Image API Objects and corresponding data in the registry.
+This options is useful when you are only concerned with removing etcd content, possibly
+to reduce the number of image objects, but are not concerned with cleaning up registry
+storage; or intend to do that separately by xref:#hard-pruning-registry[Hard Pruning the Registry],
+possibly during an appropriate maintenance window for the registry.
+|===
+
+[[image-prune-conditions]]
+=== Image prune conditions
+
+* Remove any image "managed by {product-title}" (images with the annotation
+`*openshift.io/image.managed*`) that was created at least
+`--keep-younger-than` minutes ago and is not currently referenced by:
+- any pod created less than `--keep-younger-than` minutes ago.
+- any image stream created less than `--keep-younger-than` minutes ago.
+- any running pods.
+- any pending pods.
+- any replication controllers.
+- any deployment configurations.
+- any build configurations.
+- any builds.
+- the `--keep-tag-revisions` most recent items in
+ `*stream.status.tags[].items*`.
+
+* Remove any image "managed by {product-title}" (images with the annotation
+`*openshift.io/image.managed*`) that is exceeding the smallest xref:limits.adoc#image-limits[limit]
+defined in the same project and is not currently referenced by:
+- any running pods.
+- any pending pods.
+- any replication controllers.
+- any deployment configurations.
+- any build configurations.
+- any builds.
+
+* There is no support for pruning from external registries.
+
+* When an image is pruned, all references to the image are removed from all
+image streams that have a reference to the image in `*status.tags*`.
+
+* Image layers that are no longer referenced by any images are removed as well.
+
+[NOTE]
+====
+`--prune-over-size-limit` cannot be combined with `--keep-tag-revisions` nor
+`--keep-younger-than` flags. Doing so will return an information that this
+operation is not allowed.
+====
+
+[NOTE]
+====
+Separating the removal of {product-title} Image API Objects and Image data
+from the Registry by using `--prune-registry=false` followed by
+xref:#hard-pruning-registry[Hard Pruning the Registry] narrows some timing windows,
+and is safer when compared to trying to prune both through one command. However,
+timing windows are not completely removed.
+
+For example, you can still create a Pod referencing an Image as pruning identifies that
+Image for pruning. You should still keep track of an API Object created during the pruning
+operations that might reference Images, so you can mitigate any references to deleted
+content.
+
+Also, keep in mind that re-doing the pruning without the `--prune-registry` option or with
+`--prune-registry=true` will not lead to pruning the associated storage in the image registry
+for images previously pruned by `--prune-registry=false`.
+Any images that were pruned with `--prune-registry=false` can only be deleted from
+registry storage by xref:#hard-pruning-registry[Hard Pruning the Registry].
+====
+
+To see what a pruning operation would delete:
+
+. Keeping up to three tag revisions, and keeping resources (images, image
+streams and pods) younger than sixty minutes:
++
+----
+$ oc adm prune images --keep-tag-revisions=3 --keep-younger-than=60m
+----
+
+. Pruning every image that exceeds defined limits:
++
+----
+$ oc adm prune images --prune-over-size-limit
+----
+
+To actually perform the prune operation for the previously mentioned options
+accordingly:
+
+----
+$ oc adm prune images --keep-tag-revisions=3 --keep-younger-than=60m --confirm
+
+$ oc adm prune images --prune-over-size-limit --confirm
+----
+
+[[pruning-images-secure-or-insecure]]
+=== Using secure or insecure connections
+
+The secure connection is the preferred and recomended approach. It is done over
+HTTPS protocol with a mandatory certificate verification. The `prune` command
+always attempts to use it if possible. If not possible, in some cases it can
+fall-back to insecure connection, which is dangerous. In this case, either
+certificate verification is skipped or plain HTTP protocol is used.
+
+The fall-back to insecure connection is allowed in the following cases unless
+`--certificate-authority` is specified:
+
+1. The `prune` command is run with the `--force-insecure` option.
+2. The provided `registry-url` is prefixed with the `http://` scheme.
+3. The provided `registry-url` is a local-link address or localhost.
+4. The configuration of the current user allows for an insecure connection.
+This may be caused by the user either logging in using
+`--insecure-skip-tls-verify` or choosing the insecure connection when prompted.
+
+[IMPORTANT]
+====
+If the registry is secured by a certificate authority different from the one
+used by {product-title}, it needs to be specified using the
+`--certificate-authority` flag. Otherwise, the `prune` command will fail with
+an error similar to those listed in
+xref:using-wrong-certificate-authority[Using the Wrong Certificate Authority]
+or xref:using-insecure-connection-against-secured-registry[Using an Insecure
+Connection Against a Secured Registry].
+====
+
+[[image-pruning-problems]]
+=== Image pruning problems
+
+[discrete]
+==== Images not being pruned
+
+If your images keep accumulating and the `prune` command removes just a small
+portion of what you expect, ensure that you understand
+xref:image-prune-conditions[the conditions] that must apply for an image to be
+considered a candidate for pruning.
+
+Especially ensure that images you want removed occur at higher positions in each
+xref:../architecture/core_concepts/builds_and_image_streams.adoc#image-stream-tag[tag
+history] than your chosen tag revisions threshold. For example, consider an old
+and obsolete image named `sha:abz`. By running the following command in
+namespace `N`, where the image is tagged, you will see the image is tagged three
+times in a single image stream named `myapp`:
+
+----
+$ image_name="sha:abz"
+$ oc get is -n openshift -o go-template='{{range $isi, $is := .items}}{{range $ti, $tag := $is.status.tags}}{{range $ii, $item := $tag.items}}{{if eq $item.image "'$image_name'"}}{{$is.metadata.name}}:{{$tag.tag}} at position {{$ii}} out of {{len $tag.items}}
+{{end}}{{end}}{{end}}{{end}}' # Before this place {{end}}{{end}}{{end}}{{end}}, use new line
+myapp:v2 at position 4 out of 5
+myapp:v2.1 at position 2 out of 2
+myapp:v2.1-may-2016 at position 0 out of 1
+----
+
+When default options are used, the image will not ever be pruned because it
+occurs at position `0` in a history of `myapp:v2.1-may-2016` tag. For an image to
+be considered for pruning, the administrator must either:
+
+. Specify `--keep-tag-revisions=0` with the `oc adm prune images` command.
++
+[CAUTION]
+====
+This action will effectively remove all the tags from all the namespaces with
+underlying images, unless they are younger or they are referenced by objects
+younger than the specified threshold.
+====
+
+. Delete all the
+xref:../architecture/core_concepts/builds_and_image_streams.adoc#image-stream-tag[_istags_]
+where the position is below the revision threshold, which means
+`myapp:v2.1` and `myapp:v2.1-may-2016`.
+
+. Move the image further in the history, either by running new builds pushing to
+the same _istag_, or by tagging other image. Unfortunately, this is not always
+desirable for old release tags.
+
+Tags having a date or time of a particular image's build in their names should
+be avoided, unless the image needs to be preserved for undefined amount of time.
+Such tags tend to have just one image in its history, which effectively prevents
+them from ever being pruned.
+xref:../dev_guide/managing_images.adoc#tag-naming[Learn more about _istag_
+naming.]
+
+[discrete]
+[[using-secure-connection-against-insecure-registry]]
+==== Using a secure connection against insecure registry
+
+If you see a message similar to the following in the output of the `oadm prune
+images`, then your registry is not secured and the `oadm prune images` client
+will attempt to use secure connection:
+
+----
+error: error communicating with registry: Get https://172.30.30.30:5000/healthz: http: server gave HTTP response to HTTPS client
+----
+
+. The recommened solution is to
+xref:../install_config/registry/securing_and_exposing_registry.adoc#securing-the-registry[secure
+the registry]. If that is not desired, you can force the client to use an
+insecure connection by appending `--force-insecure`  to the command *(not
+recommended)*.
+
+[[using-insecure-connection-against-secured-registry]]
+==== Using an insecure connection against a secured registry
+
+If you see one of the following errors in the output of the `oadm prune images`
+command, it means that your registry is secured using a certificate signed by a
+certificate authority other than the one used by `oadm prune images` client for
+connection verification.
+
+----
+error: error communicating with registry: Get http://172.30.30.30:5000/healthz: malformed HTTP response "\x15\x03\x01\x00\x02\x02"
+error: error communicating with registry: [Get https://172.30.30.30:5000/healthz: x509: certificate signed by unknown authority, Get http://172.30.30.30:5000/healthz: malformed HTTP response "\x15\x03\x01\x00\x02\x02"]
+----
+
+By default, the certificate authority data stored in user's configuration file
+are used -- the same for communication with the master API.
+
+Use the `--certificate-authority` option to provide the right certificate authority
+for the container image registry server.
+
+[discrete]
+[[using-wrong-certificate-authority]]
+==== Using the wrong certificate authority
+
+The following error means that the certificate authority used to sign the
+certificate of the secured container image registry is different than the authority used
+by the client.
+
+----
+error: error communicating with registry: Get https://172.30.30.30:5000/: x509: certificate signed by unknown authority
+----
+
+Make sure to provide the right one with the flag `--certificate-authority`.
+
+As a work-around, the `--force-insecure` flag can be added instead *(not
+recommended)*.
+
+ifdef::openshift-origin,openshift-enterprise[]
+[[hard-pruning-registry]]
+== Hard pruning the registry
+
+The OpenShift Container Registry can accumulate blobs that are not referenced by
+the {product-title} cluster's etcd. The basic Pruning Images procedure, therefore, is unable to operate on them. These are called
+_orphaned blobs_.
+
+Orphaned blobs can occur from the following scenarios:
+
+- Manually deleting an image with `oc delete image <sha256:image-id>` command,
+which only removes the image from etcd, but not from the registry's storage.
+
+- Pushing to the registry initiated by *docker* daemon failures, which causes some
+blobs to get uploaded, but the image manifest (which is uploaded as the very
+last component) does not. All unique image blobs become orphans.
+
+- {product-title} refusing an image because of quota restrictions.
+
+- The standard image pruner deleting an image manifest, but is interrupted before
+it deletes the related blobs.
+
+- A bug in the registry pruner, which fails to remove the intended blobs, causing
+the image objects referencing them to be removed and the blobs becoming orphans.
+// Find this BZ
+
+_Hard pruning_ the registry, a separate procedure from basic image pruning,
+allows you to remove orphaned blobs. You should hard prune if you are running
+out of storage space in your OpenShift Container Registry and believe you have
+orphaned blobs.
+
+This should be an infrequent operation and is necessary only when you have
+evidence that significant numbers of new orphans have been created. Otherwise,
+you can perform standard image pruning at regular intervals, for example, once a
+day (depending on the number of images being created).
+
+To hard prune orphaned blobs from the registry:
+
+. *Log in*: Log in using xref:../cli_reference/get_started_cli.adoc#basic-setup-and-login[the CLI] as a user with an
+xref:../architecture/additional_concepts/authentication.adoc#oauth[access token].
+
+. *Run a basic image prune*: Basic image pruning removes additional
+images that are no longer needed. The hard prune does not remove images on its
+own. It only removes blobs stored in the registry storage. Therefore, you should
+run this just before the hard prune.
++
+See Pruning Images for steps.
+
+. *Switch the registry to read-only mode*: If the registry is not
+running in read-only mode, any pushes happening at the same time as the prune
+will either:
++
+--
+- fail and cause new orphans, or
+- succeed although the images will not be pullable (because some of the
+referenced blobs were deleted).
+--
++
+Pushes will not succeed until the registry is switched back to read-write mode.
+Therefore, the hard prune must be carefully scheduled.
++
+To switch the registry to read-only mode:
+
+.. Set the following envirornment variable:
++
+----
+$ oc set env -n default \
+    dc/docker-registry \
+    'REGISTRY_STORAGE_MAINTENANCE_READONLY={"enabled":true}'
+----
+
+.. By default, the registry should automatically redeploy when the previous step
+completes; wait for the redeployment to complete before continuing. However, if
+you have disabled these triggers, you must manually redeploy the registry so
+that the new environment variables are picked up:
++
+----
+$ oc rollout -n default \
+    latest dc/docker-registry
+----
+
+. *Add the system:image-pruner role*: The service account used to run
+the registry instances requires additional permissions in order to list some
+resources.
+
+.. Get the service account name:
++
+----
+$ service_account=$(oc get -n default \
+    -o jsonpath=$'system:serviceaccount:{.metadata.namespace}:{.spec.template.spec.serviceAccountName}\n' \
+    dc/docker-registry)
+----
+
+.. Add the *system:image-pruner* cluster role to the service account:
++
+----
+$ oc adm policy add-cluster-role-to-user \
+    system:image-pruner \
+    ${service_account}
+----
+
+. *(Optional) Run the pruner in dry-run mode*: To see how many blobs
+would be removed, run the hard pruner in dry-run mode. No changes are actually
+made:
++
+----
+$ oc -n default \
+    exec -i -t "$(oc -n default get pods -l deploymentconfig=docker-registry \
+    -o jsonpath=$'{.items[0].metadata.name}\n')" \
+    -- /usr/bin/dockerregistry -prune=check
+----
++
+Alternatively, to get the exact paths for the prune candidates, increase the
+logging level:
++
+----
+$ oc -n default \
+    exec "$(oc -n default get pods -l deploymentconfig=docker-registry \
+      -o jsonpath=$'{.items[0].metadata.name}\n')" \
+    -- /bin/sh \
+    -c 'REGISTRY_LOG_LEVEL=info /usr/bin/dockerregistry -prune=check'
+----
++
+.Truncated sample output
+----
+$ oc exec docker-registry-3-vhndw \
+    -- /bin/sh -c 'REGISTRY_LOG_LEVEL=info /usr/bin/dockerregistry -prune=check'
+
+time="2017-06-22T11:50:25.066156047Z" level=info msg="start prune (dry-run mode)" distribution_version="v2.4.1+unknown" kubernetes_version=v1.6.1+$Format:%h$ openshift_version=unknown
+time="2017-06-22T11:50:25.092257421Z" level=info msg="Would delete blob: sha256:00043a2a5e384f6b59ab17e2c3d3a3d0a7de01b2cabeb606243e468acc663fa5" go.version=go1.7.5 instance.id=b097121c-a864-4e0c-ad6c-cc25f8fdf5a6
+time="2017-06-22T11:50:25.092395621Z" level=info msg="Would delete blob: sha256:0022d49612807cb348cabc562c072ef34d756adfe0100a61952cbcb87ee6578a" go.version=go1.7.5 instance.id=b097121c-a864-4e0c-ad6c-cc25f8fdf5a6
+time="2017-06-22T11:50:25.092492183Z" level=info msg="Would delete blob: sha256:0029dd4228961086707e53b881e25eba0564fa80033fbbb2e27847a28d16a37c" go.version=go1.7.5 instance.id=b097121c-a864-4e0c-ad6c-cc25f8fdf5a6
+time="2017-06-22T11:50:26.673946639Z" level=info msg="Would delete blob: sha256:ff7664dfc213d6cc60fd5c5f5bb00a7bf4a687e18e1df12d349a1d07b2cf7663" go.version=go1.7.5 instance.id=b097121c-a864-4e0c-ad6c-cc25f8fdf5a6
+time="2017-06-22T11:50:26.674024531Z" level=info msg="Would delete blob: sha256:ff7a933178ccd931f4b5f40f9f19a65be5eeeec207e4fad2a5bafd28afbef57e" go.version=go1.7.5 instance.id=b097121c-a864-4e0c-ad6c-cc25f8fdf5a6
+time="2017-06-22T11:50:26.674675469Z" level=info msg="Would delete blob: sha256:ff9b8956794b426cc80bb49a604a0b24a1553aae96b930c6919a6675db3d5e06" go.version=go1.7.5 instance.id=b097121c-a864-4e0c-ad6c-cc25f8fdf5a6
+...
+Would delete 13374 blobs
+Would free up 2.835 GiB of disk space
+Use -prune=delete to actually delete the data
+----
+
+. *Run the hard prune*: Execute the following command inside one
+running instance of *docker-registry* pod to run the hard prune:
++
+----
+$ oc -n default \
+    exec -i -t "$(oc -n default get pods -l deploymentconfig=docker-registry -o jsonpath=$'{.items[0].metadata.name}\n')" \
+    -- /usr/bin/dockerregistry -prune=delete
+----
++
+.Sample output
+----
+$ oc exec docker-registry-3-vhndw \
+    -- /usr/bin/dockerregistry -prune=delete
+
+Deleted 13374 blobs
+Freed up 2.835 GiB of disk space
+----
+
+. *Switch the registry back to read-write mode*: After the prune is
+finished, the registry can be switched back to read-write mode by executing:
++
+----
+$ oc set env -n default dc/docker-registry REGISTRY_STORAGE_MAINTENANCE_READONLY-
+----
+endif::[]
+
+[[pruning-cronjobs]]
+== Pruning Cron Jobs
+
+[IMPORTANT]
+====
+Cron Jobs is a Technology Preview feature only.
+ifdef::openshift-enterprise[]
+Technology Preview features are not
+supported with Red Hat production service level agreements (SLAs), might not be
+functionally complete, and Red Hat does not recommend to use them for
+production. These features provide early access to upcoming product features,
+enabling customers to test functionality and provide feedback during the
+development process.
+
+For more information on Red Hat Technology Preview features support scope, see
+https://access.redhat.com/support/offerings/techpreview/.
+endif::[]
+====
+
+Cron jobs can perform pruning of successful jobs, but might not handle properly,
+the failed jobs.  Therefore, cluster administrator should perform regular
+xref:../dev_guide/cron_jobs.adoc#cleaning-up-after-a-cron-job[cleanup of jobs], manually.
+We also recommend to xref:../admin_guide/manage_rbac.adoc#admin-guide-manage-rbac[restrict the access] to cron jobs
+to a small group of trusted users and set appropriate xref:../admin_guide/quota.adoc#admin-guide-quota[quota] to
+prevent the cron job from creating too many jobs and pods.

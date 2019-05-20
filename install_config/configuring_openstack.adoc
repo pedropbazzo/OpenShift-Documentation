@@ -1,0 +1,119 @@
+[[install-config-configuring-openstack]]
+= Configuring for OpenStack
+{product-author}
+{product-version}
+:data-uri:
+:rhel: Red Hat Enterprise Linux
+:rhel_version: 7.5
+:rhosp: Red Hat OpenStack Platform
+:rhosp_version: 13
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+
+toc::[]
+
+== Overview
+When deployed on link:https://www.openstack.org/[OpenStack], {product-title} can
+be configured to access the OpenStack infrastructure, including
+xref:../install_config/persistent_storage/persistent_storage_cinder.adoc#install-config-persistent-storage-persistent-storage-cinder[using OpenStack Cinder volumes as persistent storage] for application data.
+
+== Before you Begin
+
+include::install_config/topics/ocp_osp_prerequisites.adoc[leveloffset=+2]
+include::install_config/topics/ocp_osp_enabling_octavia.adoc[leveloffset=+2]
+include::install_config/topics/ocp_osp_admin_tasks.adoc[leveloffset=+2]
+include::install_config/topics/ocp_osp_flavor.adoc[leveloffset=+2]
+include::install_config/topics/ocp_osp_keypair.adoc[leveloffset=+2]
+include::install_config/topics/ocp_osp_dns.adoc[leveloffset=+2]
+include::install_config/topics/ocp_osp_networks.adoc[leveloffset=+2]
+include::install_config/topics/ocp_osp_security_grps.adoc[leveloffset=+2]
+include::install_config/topics/ocp_osp_cinder_vol.adoc[leveloffset=+2]
+include::install_config/topics/ocp_osp_deploy_instance.adoc[leveloffset=+2]
+
+[[provisioning-openstack-instances]]
+== Provisioning {product-title} Instances using the OpenShift Ansible Playbooks
+
+Once the creation and configuration of the deployment host is complete, we turn
+to preparing the environment for the deployment of {product-title} using Ansible. In
+the following subsections, Ansible is configured and certain YAML files are modified
+to achieve a successful {product-title} on OpenStack deployment.
+
+include::install_config/topics/ocp_osp_provisioning.adoc[leveloffset=+2]
+
+[[registering-openstack-nodes]]
+== Registering with Subscription Manager the {product-title} Instances
+
+With the nodes successfully provisioned, the next step is to ensure all the
+nodes are successfully registered via `subscription-manager` to install all the
+required packages for a successful {product-title} installation. For simplicity,
+a *_repos.yml_* file has been created and provided.
+
+include::install_config/topics/ocp_osp_node_registration.adoc[leveloffset=+2]
+
+[[installation-openstack-playbook]]
+== Installing {product-title} by Using an Ansible Playbook
+
+With the OpenStack instances provisioned, the focus shifts to the installation
+{product-title}. The installation and configuration is done via a series of Ansible
+playbooks and roles provided by the OpenShift RPM packages. Review the
+OSEv3.yml file that was previous configured to ensure all the options have been properly set.
+
+include::install_config/topics/ocp_osp_install.adoc[leveloffset=+2]
+
+
+[[openstack-applying-configuration-changes]]
+== Applying Configuration Changes to Existing {product-title} Environment
+include::install_config/topics/applying_configuration_changes.adoc[]
+
+[[configuring-openstack-variables]]
+=== Configuring OpenStack Variables on an existing OpenShift Environment
+
+To set the required OpenStack variables, modify the *_/etc/origin/cloudprovider/openstack.conf_* file with
+the following contents on all of your {product-title} hosts, both masters and
+nodes:
+
+----
+[Global]
+auth-url = <OS_AUTH_URL>
+username = <OS_USERNAME>
+password = <password>
+domain-id = <OS_USER_DOMAIN_ID>
+tenant-id = <OS_TENANT_ID>
+region = <OS_REGION_NAME>
+
+[LoadBalancer]
+subnet-id = <UUID of the load balancer subnet>
+----
+
+Consult your OpenStack administrators for values of the `*OS_*` variables, which
+are commonly used in OpenStack configuration.
+
+[[openstack-configuring-zone-labels]]
+=== Configuring Zone Labels for Dynamically Created OpenStack PVs
+
+Administrators can configure zone labels for dynamically
+created OpenStack PVs. This option is useful if the OpenStack Cinder zone name
+does not match the compute zone names, for example, if there is only one Cinder
+zone and many compute zones. Administrators can create Cinder volumes
+dynamically and then check the labels.
+
+To view the zone labels for the PVs:
+
+----
+# oc get pv --show-labels
+NAME                                       CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS    CLAIM                 STORAGECLASS   REASON    AGE       LABELS
+pvc-1faa6f93-64ac-11e8-930c-fa163e3c373c   1Gi        RWO            Delete           Bound     openshift-node/pvc1   standard                 12s       failure-domain.beta.kubernetes.io/zone=nova
+----
+
+The default setting is enabled. Using the `oc get pv --show-labels` command returns the `failure-domain.beta.kubernetes.io/zone=nova` label.
+
+To disable the zone label, update the *_openstack.conf_* file by adding:
+
+----
+[BlockStorage]
+ignore-volume-az = yes
+----
+
+The PVs created after restarting the master services will not have the zone label.

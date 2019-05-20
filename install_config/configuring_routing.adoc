@@ -1,0 +1,38 @@
+[[install-config-configuring-routing]]
+= Configuring Route Timeouts
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+
+toc::[]
+
+
+After installing {product-title} and
+xref:../install_config/router/index.adoc#install-config-router-overview[deploying
+a router], you can configure the default timeouts for an existing route when you
+have services in need of a low timeout, as required for Service Level
+Availability (SLA) purposes, or a high timeout, for cases with a slow back end.
+
+Using the `oc annotate` command, add the timeout to the route:
+
+====
+----
+# oc annotate route <route_name> \
+    --overwrite haproxy.router.openshift.io/timeout=<timeout><time_unit>
+----
+====
+
+For example, to set a route named `myroute` to a timeout of two seconds:
+
+====
+----
+# oc annotate route myroute --overwrite haproxy.router.openshift.io/timeout=2s
+----
+====
+
+Supported time units are microseconds (us), milliseconds (ms), seconds (s),
+minutes (m), hours (h), or days (d).

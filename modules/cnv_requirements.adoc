@@ -1,0 +1,103 @@
+// Module included in the following assemblies:
+//
+// * cnv_install/cnv_install.adoc
+
+[[Requirements]]
+
+{ProductName} requires an existing {product-title} cluster
+with the following configuration considerations:
+
+[[node-configuration]]
+== Node configuration
+
+See the xref:../install/index.adoc#environment-scenarios[OpenShift
+Container Platform Installing Clusters Guide] for planning
+considerations for different cluster configurations.
+
+https://github.com/openshift/origin/blob/master/CONTRIBUTING.adoc#download-from-github[Binary
+builds] and
+https://docs.openshift.org/latest/minishift/index.html[MiniShift] are
+not supported with {ProductName}.
+
+[[admission-controller-enable]]
+== Admission control webhooks
+
+{ProductName} implements an admission controller as a webhook so that
+{ProductName}-specific creation requests are forwarded to the webhook for
+validation. Registering webhooks must be enabled during installation of the
+{product-title} cluster.
+
+To register the admission controller webhook, add the following under the
+`[OSEv3:vars]` section in your Ansible inventory file during {product-title} deployment:
+
+----
+openshift_master_admission_plugin_config={"ValidatingAdmissionWebhook":{"configuration":{"kind": "DefaultAdmissionConfig","apiVersion": "v1","disable": false}},"MutatingAdmissionWebhook":{"configuration":{"kind": "DefaultAdmissionConfig","apiVersion": "v1","disable": false}}}
+----
+
+[[cri-o-runtime]]
+== CRI-O runtime
+
+http://cri-o.io[CRI-O] is the required container runtime for use with {ProductName}.
+
+See the
+https://access.redhat.com/documentation/en-us/openshift_container_platform/3.11/html/cri-o_runtime/use-crio-engine[OpenShift
+Container Platform 3.11 CRI-O Runtime Documentation] for more information on using
+CRI-O.
+
+[[storage]]
+== Storage
+
+{ProductName} supports local volumes, block volumes, and Red Hat OpenShift
+Container Storage as storage backends.
+
+=== Local volumes
+
+Local volumes are PVs that represent locally-mounted file systems. See the xref:../install_config/configuring_local.adoc#install-config-configuring-local[OpenShift
+Container Platform Configuring Clusters Guide] for more information.
+
+=== Block volumes
+
+{ProductName} supports the use of block volume PVCs. In order to use
+block volumes, the {product-title} cluster must be configured with the *BlockVolume*
+feature gate enabled. See the xref:../architecture/additional_concepts/storage.adoc#block-volume-support[{product-title} Architecture Guide] for more information.
+
+[IMPORTANT]
+====
+Local and block volumes both have limited support in {product-title} 3.11
+because they are currently Technology Preview. This may change in
+a future release.
+
+Technology Preview features are not supported with Red Hat production service
+level agreements (SLAs), might not be functionally complete, and Red Hat does
+not recommend to use them for production. These features provide early access
+to upcoming product features, enabling customers to test functionality and
+provide feedback during the development process.
+
+For more information on Red Hat Technology Preview features support scope, see
+https://access.redhat.com/support/offerings/techpreview/.
+====
+=== Red Hat OpenShift Container Storage
+
+Red Hat OpenShift Container Storage uses Red Hat Gluster Storage to provide persistent storage and dynamic provisioning.
+It can be used containerized within {product-title} (converged mode) and
+non-containerized on its own nodes (independent mode).
+
+See the
+https://access.redhat.com/documentation/en-us/red_hat_openshift_container_storage/3.11/[OpenShift Container Storage Product Documentation] or the xref:../install/configuring_inventory_file.adoc#advanced-install-glusterfs-persistent-storage[OpenShift
+Container Platform Installing Clusters Guide] for more information.
+
+[IMPORTANT]
+====
+Requires Red Hat OpenShift Container Storage version 3.11.1 or later.
+Earlier versions of Red Hat OpenShift Container Storage do not support CRI-O, the required container
+runtime for {ProductName}.
+====
+
+[[metrics]]
+== Metrics
+
+Metrics are not required, but are a recommended addition to your {product-title}
+cluster because they provide additional information about {ProductName} resources.
+
+See the xref:../install/configuring_inventory_file.adoc#advanced-install-cluster-metrics[{product-title} Installing Clusters Guide] for comprehensive
+information on deploying metrics in your cluster.

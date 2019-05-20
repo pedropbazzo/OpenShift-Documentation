@@ -1,0 +1,133 @@
+[[scaling-performance-cluster-monitoring]]
+= Scaling Cluster Monitoring Operator
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+toc::[]
+
+== Overview
+
+{product-title} exposes metrics that can be collected and stored in back-ends by
+the
+link:https://github.com/openshift/cluster-monitoring-operator[*cluster-monitoring-operator*].
+As an {product-title} administrator, you can view system resources, containers
+and components metrics in one dashboard interface, Grafana.
+
+This topic provides information on scaling the cluster monitoring operator.
+
+[[cluster-monitoring-recommendations-for-OCP]]
+== Recommendations for {product-title}
+
+* Use at least three xref:../admin_guide/manage_nodes.adoc#infrastructure-nodes[infrastructure (infra)] nodes.
+* Use at least three
+link:https://www.redhat.com/en/technologies/cloud-computing/openshift-container-storage[*openshift-container-storage*]
+nodes with non-volatile memory express (NVMe) drives.
+* Use persistent storage when configuring *openshift-monitoring*. Set
+`openshift_cluster_monitoring_operator_prometheus_storage_enabled=true`.
+* Use xref:../install_config/persistent_storage/persistent_storage_glusterfs.adoc#overview[GlusterFS as storage] on top of NVMe drives.
+
+[[cluster-monitoring-capacity-planning]]
+== Capacity Planning for Cluster Monitoring Operator
+
+Various tests were performed for different scale sizes. The Prometheus database
+grew, as reflected in the table below.
+
+.Prometheus Database storage requirements based on number of nodes/pods in the cluster
+[options="header"]
+|===
+|Number of Nodes |Number of Pods |Prometheus storage growth per day |Prometheus storage growth per 15 days |RAM Space (per scale size) |Network (per tsdb chunk)
+
+|50
+|1800
+|6.3 GB
+|94 GB
+|6 GB
+|16 MB
+
+|100
+|3600
+|13 GB
+|195 GB
+|10 GB
+|26 MB
+
+|150
+|5400
+|19 GB
+|283 GB
+|12 GB
+|36 MB
+
+|200
+|7200
+|25 GB
+|375 GB
+|14 GB
+|46 MB
+|===
+
+In the above calculation, approximately 20 percent of the expected size was
+added as overhead to ensure that the storage requirements do not exceed the
+calculated value.
+
+The above calculation was developed for the default {product-title}
+*cluster-monitoring-operator*. For higher scale, edit the
+`openshift_cluster_monitoring_operator_prometheus_storage_capacity` variable in
+the Ansible inventory file, which defaults to `50Gi`.
+
+[NOTE]
+====
+CPU utilization has minor impact. The ratio is approximately 1 core out of 40
+per 50 nodes and 1800 pods.
+====
+
+[[cluster-monitoring-test-environment]]
+=== Lab Environment
+
+All experiments were performed in an {product-title} on OpenStack environment:
+
+* Infra nodes (VMs) - 40 cores, 157 GB RAM.
+* CNS nodes (VMs) - 16 cores, 62 GB RAM, NVMe drives.
+
+[[cluster-monitoring-scaling-pods-prereqs]]
+=== Prerequisites
+
+Based on you scale destination, compute and set the relevant PV size for the Prometheus data store.
+Since the default Prometheus pods replicas is 2, for 100 nodes with 3600 pods you will need 188 GB.
+
+For example:
+
+----
+94 GB (space per 15 days ) * 2 (pods) = 188 GB free
+----
+
+Based on this equation, set
+`openshift_cluster_monitoring_operator_prometheus_storage_capacity=94Gi`.
+
+[[cluster-monitoring-scaling-pods-prometheus]]
+=== Scaling the Prometheus Components
+
+To scale up the number of {product-title} Prometheus pods replicas, run:
+
+----
+# oc scale -n openshift-monitoring --replicas=3 statefulset prometheus-k8s
+----
+
+[NOTE]
+====
+* The default replicas are 2 Prometheus pods.
+* If you add a new node to or remove an existing node from a Prometheus cluster,
+the data stored in the cluster rebalances across the cluster.
+====
+
+To scale down:
+
+----
+# oc scale -n openshift-monitoring --replicas=0 statefulset prometheus-k8s
+----

@@ -1,0 +1,431 @@
+[[admin-guide-managing-projects]]
+= Managing Projects
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+
+toc::[]
+
+== Overview
+
+In {product-title}, projects are used to group and isolate related objects. As an administrator, you can give developers access to certain projects, allow them to create their own, and give them administrative rights within individual projects.
+
+ifdef::openshift-dedicated[]
+A dedicated administrator is by default an administrator for all projects on the
+cluster that are not managed by Red Hat Operations.
+endif::[]
+
+[[selfprovisioning-projects]]
+== Self-provisioning Projects
+
+You can allow developers to create their own projects. There is an endpoint
+that will provision a project according to a
+xref:../dev_guide/templates.adoc#dev-guide-templates[template]. The web console and `oc new-project`
+command use this endpoint when a developer xref:../dev_guide/projects.adoc#dev-guide-projects[creates a new project].
+
+[[modifying-the-template-for-new-projects]]
+=== Modifying the Template for New Projects
+The API server automatically provisions projects based on the template that is
+identified by the `projectRequestTemplate` parameter of the
+ifdef::openshift-enterprise,openshift-origin[]
+xref:../install_config/master_node_configuration.adoc#master-node-config-project-config[*_master-config.yaml_* file].
+endif::openshift-enterprise,openshift-origin[]
+ifdef::openshift-dedicated[]
+*_master-config.yaml_* file
+endif::openshift-dedicated[]
+If the parameter is not defined, the API server creates a default template that
+creates a project with the requested name, and assigns the requesting user to
+the "admin" role for that project.
+
+To create your own custom project template:
+
+. Start with the current default project template:
++
+----
+$ oc adm create-bootstrap-project-template -o yaml > template.yaml
+----
+
+. Use a text editor to modify the *_template.yaml_* file by adding objects or modifying existing objects.
+
+. Load the template:
++
+----
+$ oc create -f template.yaml -n default
+----
+
+. Modify the *_master-config.yaml_* file to reference the loaded template:
++
+----
+...
+projectConfig:
+  projectRequestTemplate: "default/project-request"
+  ...
+----
+
+When a project request is submitted, the API substitutes the following parameters into the template:
+
+[cols="4,8",options="header"]
+|===
+|Parameter |Description
+
+|*PROJECT_NAME*
+|The name of the project. Required.
+
+|*PROJECT_DISPLAYNAME*
+|The display name of the project. May be empty.
+
+|*PROJECT_DESCRIPTION*
+|The description of the project. May be empty.
+
+|*PROJECT_ADMIN_USER*
+|The username of the administrating user.
+
+|*PROJECT_REQUESTING_USER*
+|The username of the requesting user.
+|===
+
+Access to the API is granted to developers with the
+xref:../architecture/additional_concepts/authorization.adoc#roles[`self-provisioner`
+role] and the `self-provisioners` cluster role binding. This role is available
+to all authenticated developers by default.
+
+ifdef::openshift-enterprise,openshift-origin[]
+[[disabling-self-provisioning]]
+=== Disabling Self-provisioning
+
+You can prevent an authenticated user group from self-provisioning new projects.
+
+. Log in as a user with
+xref:../architecture/additional_concepts/authorization.adoc#roles[*cluster-admin*]
+privileges.
+. Review the `self-provisioners`
+xref:../admin_guide/manage_rbac.adoc#viewing-cluster-bindings[clusterrolebinding usage].
+Run the following command, then review the subjects in the `self-provisioners`
+section.
++
+----
+$ oc  describe clusterrolebinding.rbac self-provisioners
+
+Name:		self-provisioners
+Labels:		<none>
+Annotations:	rbac.authorization.kubernetes.io/autoupdate=true
+Role:
+  Kind:	ClusterRole
+  Name:	self-provisioner
+Subjects:
+  Kind	Name				Namespace
+  ----	----				---------
+  Group	system:authenticated:oauth
+----
+
+. Remove the `self-provisioner` cluster role from the group `system:authenticated:oauth`.
+** If the `self-provisioners` cluster role binding binds only the
+`self-provisioner` role to the `system:authenticated:oauth` group, run the
+following command:
++
+----
+$ oc patch clusterrolebinding.rbac self-provisioners -p '{"subjects": null}'
+----
++
+** If the `self-provisioners` clusterrolebinding binds the `self-provisioner`
+role to more users, groups, or serviceaccounts than the
+`system:authenticated:oauth` group, run the following command:
++
+----
+$ oc adm policy remove-cluster-role-from-group self-provisioner system:authenticated:oauth
+----
+
+. Set the `projectRequestMessage` parameter value in the
+*_master-config.yaml_* file to instruct developers how to request a new
+project. This parameter value is a string that will be presented to a user in
+the web console and command line when the user attempts to self-provision a project.
+You might use one of the following messages:
++
+--
+* To request a project, contact your system administrator at
+[x-]`projectname@example.com`.
+* To request a new project, fill out the project request form located at
+[x-]`https://internal.example.com/openshift-project-request`.
+--
++
+.Example YAML file
+[source,yaml]
+----
+...
+projectConfig:
+  ProjectRequestMessage: "message"
+  ...
+----
+
+. Edit the `self-provisioners` cluster role binding to prevent automatic updates
+to the role. Automatic updates reset the cluster roles to the default state.
+** To update the role binding from the command line:
+... Run the following command:
++
+----
+$ oc edit clusterrolebinding.rbac self-provisioners
+----
+... In the displayed role binding, set the `rbac.authorization.kubernetes.io/autoupdate` parameter
+ value to `false`, as shown in the following example:
++
+[source,yaml]
+----
+apiVersion: authorization.openshift.io/v1
+kind: ClusterRoleBinding
+metadata:
+  annotations:
+    rbac.authorization.kubernetes.io/autoupdate: "false"
+...
+----
+
+ ** To update the role binding by using a single command:
++
+----
+$ oc patch clusterrolebinding.rbac self-provisioners -p '{ "metadata": { "annotations": { "rbac.authorization.kubernetes.io/autoupdate": "false" } } }'
+----
+
+[[using-node-selectors]]
+== Using Node Selectors
+
+Node selectors are used in conjunction with labeled nodes to control pod
+placement.
+
+[NOTE]
+====
+Labels can be assigned
+xref:../install/configuring_inventory_file.adoc#configuring-node-host-labels[during
+cluster installation], or
+xref:../admin_guide/manage_nodes.adoc#updating-labels-on-nodes[added to a node
+after installation].
+====
+
+[[setting-the-cluster-wide-default-node-selector]]
+=== Setting the Cluster-wide Default Node Selector
+
+As a cluster administrator, you can set the cluster-wide default node selector
+to restrict pod placement to specific nodes.
+
+Edit the master configuration file at *_/etc/origin/master/master-config.yaml_*
+and add a value for a default node selector. This is applied to the pods created
+in all projects without a specified `*nodeSelector*` value:
+
+----
+...
+projectConfig:
+  defaultNodeSelector: "type=user-node,region=east"
+...
+----
+
+Restart the OpenShift service for the changes to take effect:
+
+----
+# master-restart api
+# master-restart controllers
+----
+
+=== Setting the Project-wide Node Selector
+
+To create an individual project with a node selector, use the `--node-selector`
+option when creating a project. For example, if you have an {product-title}
+topology with multiple regions, you can use a node selector to restrict specific
+{product-title} projects to only deploy pods onto nodes in a specific region.
+
+The following creates a new project named `myproject` and dictates that pods be
+deployed onto nodes labeled `user-node` and `east`:
+
+----
+$ oc adm new-project myproject \
+    --node-selector='type=user-node,region=east'
+----
+
+Once this command is run, this becomes the administrator-set node selector for
+all pods contained in the specified project.
+
+[NOTE]
+====
+While the `new-project` subcommand is available for both `oc adm` and `oc`, the
+cluster administrator and developer commands respectively, creating a new
+project with a node selector is only available with the `oc adm` command. The
+`new-project` subcommand is not available to project developers when
+self-provisioning projects.
+====
+
+Using the `oc adm new-project` command adds an `annotation` section to the
+project. You can edit a project, and change the `openshift.io/node-selector`
+value to override the default:
+
+----
+...
+metadata:
+  annotations:
+    openshift.io/node-selector: type=user-node,region=east
+...
+----
+
+You can also override the default value for an existing project namespace by using the following command:
+
+----
+# oc patch namespace myproject -p \
+    '{"metadata":{"annotations":{"openshift.io/node-selector":"node-role.kubernetes.io/infra=true"}}}'
+----
+
+If `openshift.io/node-selector` is set to an empty string (`oc adm new-project
+--node-selector=""`), the project will not have an administrator-set node
+selector, even if the cluster-wide default has been set. This means that, as a
+cluster administrator, you can set a default to restrict developer projects to a
+subset of nodes and still enable infrastructure or other projects to schedule
+the entire cluster.
+
+[[developer-specified-node-selectors]]
+=== Developer-specified Node Selectors
+
+{product-title} developers
+xref:../dev_guide/deployments/basic_deployment_operations.adoc#assigning-pods-to-specific-nodes[can set a node selector on their pod configuration] if they wish to restrict nodes even
+further. This will be in addition to the project node selector, meaning that you
+can still dictate node selector values for all projects that have a node
+selector value.
+
+For example, if a project has been created with the above annotation
+(`openshift.io/node-selector: type=user-node,region=east`) and a developer sets
+another node selector on a pod in that project, for example
+`clearance=classified`, the pod will only ever be scheduled on nodes that have
+all three labels (`type=user-node`, `region=east`, and `clearance=classified`).
+If they set `region=west` on a pod, their pods would be demanding nodes with
+labels `region=east` and `region=west`, which cannot work. The pods will never
+be scheduled, because labels can only be set to one value.
+
+[[limit-projects-per-user]]
+== Limiting Number of Self-Provisioned Projects Per User
+
+The number of self-provisioned projects requested by a given user can be limited
+with the `*ProjectRequestLimit*`
+xref:../architecture/additional_concepts/admission_controllers.adoc#architecture-additional-concepts-admission-controllers[admission
+control plug-in].
+
+[IMPORTANT]
+====
+If your project request template was created in {product-title} 3.1 or earlier
+using the process described in
+xref:modifying-the-template-for-new-projects[Modifying the Template for New
+Projects], then the generated template does not include the annotation
+`*openshift.io/requester: ${PROJECT_REQUESTING_USER}*`, which is used for the
+`*ProjectRequestLimitConfig*`. You must add the annotation.
+====
+
+In order to specify limits for users, a configuration must be specified for the
+plug-in within the master configuration file
+(*_/etc/origin/master/master-config.yaml_*). The plug-in configuration takes a
+list of user label selectors and the associated maximum project requests.
+
+Selectors are evaluated in order. The first one matching the current user will
+be used to determine the maximum number of projects. If a selector is not
+specified, a limit applies to all users. If a maximum number of projects is not
+specified, then an unlimited number of projects are allowed for a specific
+selector.
+
+The following configuration sets a global limit of 2 projects per user while allowing 10
+projects for users with a label of `level=advanced` and unlimited projects for
+users with a label of `level=admin`.
+
+[source, yaml]
+----
+admissionConfig:
+  pluginConfig:
+    ProjectRequestLimit:
+      configuration:
+        apiVersion: v1
+        kind: ProjectRequestLimitConfig
+        limits:
+        - selector:
+            level: admin <1>
+        - selector:
+            level: advanced <2>
+          maxProjects: 10
+        - maxProjects: 2 <3>
+----
+<1> For selector `level=admin`, no `*maxProjects*` is specified. This means that users
+with this label will not have a maximum of project requests.
+<2> For selector `level=advanced`, a maximum number of 10 projects will be allowed.
+<3> For the third entry, no selector is specified. This means that it will be applied
+to any user that doesn't satisfy the previous two rules. Because rules are evaluated
+in order, this rule should be specified last.
+
+[NOTE]
+====
+xref:../admin_guide/manage_users.adoc#managing-users-managing-user-and-group-labels[Managing
+User and Group Labels] provides further guidance on how to add, remove, or show
+labels for users and groups.
+====
+
+Once your changes are made, restart {product-title} for the changes to take
+effect.
+
+----
+# master-restart api
+# master-restart controllers
+----
+
+endif::openshift-enterprise,openshift-origin[]
+
+ifdef::openshift-dedicated[]
+[[enforcing-different-project-limits-for-users]]
+== Enforcing Different Project Limits for Users
+
+If you are an {product-title} administrator and want to enforce different limits
+on the number of projects that your users can create, apply the appropriate
+label to the user.
+
+.Acceptable Values for Project Limit
+
+----
+openshift.io/project-limit: '0'
+openshift.io/project-limit: '1'
+openshift.io/project-limit: '3'
+openshift.io/project-limit: '5'
+openshift.io/project-limit: '10'
+openshift.io/project-limit: '20'
+openshift.io/project-limit: '50'
+openshift.io/project-limit: '100'
+openshift.io/project-limit: 'unlimited'
+----
+
+The default limit is `unlimited`.
+
+[[managing-limits-and-quota-on-project-resources]]
+== Managing Limits and Quota on Project Resources
+
+A default project template is available for any projects created by users on the
+cluster. The template helps prevent inadvertent consumption of all of the cluster
+and node resources. The project template is created and configured in the
+`dedicated-admin` namespace.
+
+Edit the default project template with the following command:
+
+----
+$ oc edit template project-request -n dedicated-admin
+----
+
+If you modify the default project template and want your changes to remain after
+you upgrade, you must update the `openshift.io/overwrite-protect` annotation value
+to `true`.
+
+----
+$ oc annotate template project-request -n dedicated-admin openshift.io/overwrite-protect=true
+----
+
+The default value is `false`, so by default your changes are not protected
+against overwrite. You only need to update the value if you make changes to the
+project template.
+
+Setting the value to `true` results in the upgrade skipping the template and not
+updating it. Therefore, you must check that newer versions of {product-title}
+provide anything of interest that they would need to incorporate.
+
+See xref:../admin_guide/quota.adoc#admin-guide-quota[Setting Quotas] and
+xref:../admin_guide/limits.adoc#admin-guide-limits[Setting Limit Ranges] for
+more information.
+endif::openshift-dedicated[]

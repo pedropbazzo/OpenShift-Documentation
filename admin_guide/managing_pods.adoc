@@ -1,0 +1,263 @@
+[[admin-guide-manage-pods]]
+= Managing Pods
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+toc::[]
+
+== Overview
+
+This topic describes the management of
+xref:../architecture/core_concepts/pods_and_services.adoc#pods[pods], including
+limiting their run-once duration, and how much bandwidth they can use.
+
+[[viewing-pods]]
+== Viewing Pods
+
+You can display usage statistics about pods, which provide the runtime
+environments for containers. These usage statistics include CPU, memory, and
+storage consumption.
+
+To view the usage statistics:
+
+----
+$ oc adm top pods
+NAME                         CPU(cores)   MEMORY(bytes)
+hawkular-cassandra-1-pqx6l   219m         1240Mi
+hawkular-metrics-rddnv       20m          1765Mi
+heapster-n94r4               3m           37Mi
+----
+
+To view the usage statistics for pods with labels:
+
+----
+$ oc adm top pod --selector=''
+----
+
+You must choose the selector (label query) to filter on. Supports `=`, `==`, and `!=`.
+
+[NOTE]
+====
+You must have `cluster-reader` permission to view the usage statistics.
+====
+
+[NOTE]
+====
+The `metrics-server` must be installed to view the usage statistics.
+See
+xref:../dev_guide/pod_autoscaling.adoc#req-for-using-hpas[Requirements
+for Using Horizontal Pod Autoscalers].
+====
+
+ifdef::openshift-enterprise,openshift-origin[]
+[[manage-pods-limit-run-once-duration]]
+== Limiting Run-once Pod Duration
+
+{product-title} relies on run-once pods to perform tasks such as deploying a pod
+or performing a build. Run-once pods are pods that have a `RestartPolicy` of
+`Never` or `OnFailure`.
+
+The cluster administrator can use the *RunOnceDuration* admission control
+plug-in to force a limit on the time that those run-once pods can be active.
+Once the time limit expires, the cluster will try to actively terminate those
+pods. The main reason to have such a limit is to prevent tasks such as builds to
+run for an excessive amount of time.
+
+[[configuring-the-run-once-duration-plug-in]]
+=== Configuring the RunOnceDuration Plug-in
+
+The plug-in configuration should include the default active deadline for
+run-once pods. This deadline is enforced globally, but can be superseded on
+a per-project basis.
+
+[source,yaml]
+----
+admissionConfig:
+  pluginConfig:
+    RunOnceDuration:
+      configuration:
+        apiVersion: v1
+        kind: RunOnceDurationConfig
+        activeDeadlineSecondsOverride: 3600 <1>
+....
+----
+<1> Specify the global default for run-once pods in seconds.
+
+[[specifying-a-custom-duration-per-project]]
+=== Specifying a Custom Duration per Project
+
+In addition to specifying a global maximum duration for run-once pods, an
+administrator can add an annotation
+(`openshift.io/active-deadline-seconds-override`) to a specific project to
+override the global default.
+
+* For a new project, define the annotation in the project specification _.yaml_ file.
++
+[source,yaml]
+----
+apiVersion: v1
+kind: Project
+metadata:
+  annotations:
+    openshift.io/active-deadline-seconds-override: "1000" <1>
+  name: myproject
+----
++
+<1> Overrides the default active deadline seconds for run-once pods to 1000
+seconds. Note that the value of the override must be specified in string form.
+
+* For an existing project,
+
+** Run `oc edit` and add the `openshift.io/active-deadline-seconds-override: 1000` annotation in the editor.
++
+[source, bash]
+----
+$ oc edit namespace <project-name>
+----
++
+Or
++
+** Use the `oc patch` command:
++
+[source, bash]
+----
+$ oc patch namespace <project_name> -p '{"metadata":{"annotations":{"openshift.io/active-deadline-seconds-override":"1000"}}}'
+----
+
+endif::openshift-enterprise,openshift-origin[]
+
+[[admin-guide-manage-pods-limit-bandwidth]]
+== Limiting the Bandwidth Available to Pods
+
+You can apply quality-of-service traffic shaping to a pod and effectively limit
+its available bandwidth. Egress traffic (from the pod) is handled by policing,
+which simply drops packets in excess of the configured rate. Ingress traffic (to
+the pod) is handled by shaping queued packets to effectively handle data. The
+limits you place on a pod do not affect the bandwidth of other pods.
+
+To limit the bandwidth on a pod:
+
+. Write an object definition JSON file, and specify the data traffic speed using
+`kubernetes.io/ingress-bandwidth` and `kubernetes.io/egress-bandwidth`
+annotations. For example, to limit both pod egress and ingress bandwidth to 10M/s:
++
+.Limited Pod Object Definition
+----
+{
+    "kind": "Pod",
+    "spec": {
+        "containers": [
+            {
+                "image": "openshift/hello-openshift",
+                "name": "hello-openshift"
+            }
+        ]
+    },
+    "apiVersion": "v1",
+    "metadata": {
+        "name": "iperf-slow",
+        "annotations": {
+            "kubernetes.io/ingress-bandwidth": "10M",
+            "kubernetes.io/egress-bandwidth": "10M"
+        }
+    }
+}
+----
+
+. Create the pod using the object definition:
++
+----
+oc create -f <file_or_dir_path>
+----
+
+[[managing-pods-poddisruptionbudget]]
+== Setting Pod Disruption Budgets
+
+A _pod disruption budget_ is part of the
+link:http://kubernetes.io/docs/admin/disruptions/[Kubernetes] API, which can be
+managed with `oc` commands like other
+xref:../cli_reference/basic_cli_operations.adoc#object-types[object types]. They
+allow the specification of safety constraints on pods during operations, such as
+draining a node for maintenance.
+
+`PodDisruptionBudget` is an API object that specifies the minimum number or
+percentage of replicas that must be up at a time. Setting these in projects can
+be helpful during node maintenance (such as scaling a cluster down or a cluster
+upgrade) and is only honored on voluntary evictions (not on node failures).
+
+A `PodDisruptionBudget` object's configuration consists of the following key
+parts:
+
+* A label selector, which is a label query over a set of pods.
+* An availability level, which specifies the minimum number of pods that must be
+ available simultaneously.
+
+The following is an example of a `PodDisruptionBudget` resource:
+
+[source,yaml]
+----
+apiVersion: policy/v1beta1 <1>
+kind: PodDisruptionBudget
+metadata:
+  name: my-pdb
+spec:
+  selector:  <2>
+    matchLabels:
+      foo: bar
+  minAvailable: 2  <3>
+----
+
+<1> `PodDisruptionBudget` is part of the `policy/v1beta1` API group.
+<2> A label query over a set of resources. The result of `matchLabels` and
+ `matchExpressions` are logically conjoined.
+<3> The minimum number of pods that must be available simultaneously. This can
+be either an integer or a string specifying a percentage (for example, `20%`).
+
+If you created a YAML file with the above object definition, you could add it to project with the following:
+
+----
+$ oc create -f </path/to/file> -n <project_name>
+----
+
+You can check for pod disruption budgets across all projects with the following:
+
+----
+$ oc get poddisruptionbudget --all-namespaces
+
+NAMESPACE         NAME          MIN-AVAILABLE   SELECTOR
+another-project   another-pdb   4               bar=foo
+test-project      my-pdb        2               foo=bar
+----
+
+The `PodDisruptionBudget` is considered healthy when there are at least
+`minAvailable` pods running in the system. Every pod above that limit can be
+xref:../admin_guide/out_of_resource_handling.adoc#out-of-resource-eviction-policy[evicted].
+
+[NOTE]
+====
+Depending on your xref:../admin_guide/scheduling/priority_preemption.adoc#admin-guide-priority-preemption[pod priority and preemption] settings,
+lower-priority pods might be removed despite their pod disruption budget requirements.
+====
+
+[[admin-manage-pod-critical]]
+== Configuring Critical Pods
+
+There are a number of core components, such as DNS, that are critical to a fully functional cluster,
+but, run on a regular cluster node rather than the master. A cluster may stop working properly if a critical add-on is evicted.
+You can make a pod critical by adding the the `scheduler.alpha.kubernetes.io/critical-pod` annotation to the pod specification so that
+the xref:../admin_guide/scheduling/descheduler.adoc#admin-guide-descheduler[descheduler] will not remove these pods.
+
+----
+spec:
+  template:
+    metadata:
+      name: critical-pod
+      annotations:
+        scheduler.alpha.kubernetes.io/critical-pod: "true"
+----

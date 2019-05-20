@@ -1,0 +1,10 @@
+[[install-config-index]]
+= Overview
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+
+This guide covers further configuration options available for your
+{product-title} cluster post-installation.

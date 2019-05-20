@@ -1,0 +1,309 @@
+[[install-config-storage-examples-ceph-example]]
+= Using Ceph RBD for persistent storage
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+toc::[]
+
+== Overview
+
+This topic provides a complete example of using an existing Ceph cluster for
+{product-title} persistent storage. It is assumed that a working Ceph cluster is
+already set up. If not, consult the
+link:https://access.redhat.com/products/red-hat-ceph-storage[Overview of Red Hat
+Ceph Storage].
+
+xref:../persistent_storage/persistent_storage_ceph_rbd.adoc#install-config-persistent-storage-persistent-storage-ceph-rbd[Persistent Storage
+Using Ceph Rados Block Device] provides an explanation of persistent volumes
+(PVs), persistent volume claims (PVCs), and using Ceph RBD as persistent
+storage.
+
+[NOTE]
+====
+* Run all `oc` commands on the {product-title} master host.
+* The {product-title} all-in-one host is not often used to run pod workloads and,
+thus, is not included as a schedulable node.
+====
+
+[[using-existing-ceph-cluster-as-persistent-store]]
+== Using an existing Ceph cluster for persistent storage
+
+To use an existing Ceph cluster for persistent storage:
+
+. Install the latest ceph-common package:
++
+[source, bash]
+----
+yum install -y ceph-common
+----
++
+[NOTE]
+====
+The *ceph-common* library must be installed on *all schedulable* {product-title}
+nodes.
+====
+
+.  Create the keyring for the client:
++
+[source, bash]
+----
+$ ceph auth get-or-create client.openshift-test mon 'allow *' osd 'allow rwx pool=openshift' -o /etc/ceph/ceph.client.openshift-test-keyring
+----
+
+. Convert the keyring to base64:
++
+[source, bash]
+----
+$ /etc/ceph/ceph.client.openshift-test-keyring
+[client.openshift-test]
+	key = AQBO2xdbq3iTDhAAWCo8loVA5RitlF4Sde5uYQ==
+$ echo -n AQBO2xdbq3iTDhAAWCo8loVA5RitlF4Sde5uYQ== |base64
+QVFCTzJ4ZGJxM2lURGhBQVdDbzhsb1ZBNVJpdGxGNFNkZTV1WVE9PQ==
+----
+
+. Edit the *_ceph-secret.yaml_* file to include the base64-decoded keyring:
++
+.Ceph secret definition example
+[source,yaml]
+----
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ceph-secret-test
+data:
+  key: QVFCTzJ4ZGJxM2lURGhBQVdDbzhsb1ZBNVJpdGxGNFNkZTV1WVE9PQo= <1>
+----
+<1> This base64 key is generated on one of the Ceph MON nodes using the `ceph
+auth get-key client.admin | base64` command, then copying the output and pasting
+it as the secret key’s value.
+
+. Create the secret:
++
+[source, bash]
+----
+$ oc create -f ceph-secret.yaml 
+secret "ceph-secret-test" created
+----
+
+. Verify that the secret was created:
++
+[source, bash]
+----
+$ oc get secret
+NAME                       TYPE          DATA      AGE
+ceph-secret-test           Opaque        1         22h
+----
+
+. Create the PV object definition using Ceph RBD:
++
+.PV object definition using Ceph RDB example
+[source,yaml]
+----
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: ceph-pv-test    <1>
+spec:
+  capacity:
+    storage: 2Gi    <2>
+  accessModes:
+    - ReadWriteOnce <3>
+  rbd:              <4>
+    monitors:       <5>
+      - 192.168.122.133:6789
+    pool: rbd
+    image: ceph-image <6>
+    user: admin
+    secretRef:
+      name: ceph-secret-test <7>
+    fsType: ext4        <8>
+    readOnly: false
+  persistentVolumeReclaimPolicy: Retain
+----
+<1> The name of the PV, which is referenced in pod definitions or displayed in
+various `oc` volume commands.
+<2> The amount of storage allocated to this volume.
+<3> The `*accessModes*` are used as labels to match a PV and a PVC. They currently
+do not define any form of access control. All block storage is defined to be
+single user (non-shared storage).
+<4> This defines the volume type being used. In this case, the *rbd* plug-in is
+defined.
+<5> This is an array of Ceph monitor IP addresses and ports.
+<6> The `ceph-image` must be created on the Ceph cluster.
+<7> Enter the Ceph secret that you created. It is used to create a secure
+connection from {product-title} to the Ceph server.
+<8> This is the type of file system that is mounted on the Ceph RBD block device.
+
+. Create the PV:
++
+[source, bash]
+----
+$ oc create -f ceph-pv-test.yaml
+persistentvolume "ceph-pv-test" created
+----
+
+. Verify that the PV was created:
++
+[source, bash]
+----
+$ oc get pv
+NAME                     LABELS    CAPACITY     ACCESSMODES   STATUS      CLAIM     REASON    AGE
+ceph-pv                  <none>    2147483648   RWO           Available                       2s
+----
+
+. Create the PVC object definition:
++
+.PVC object definition example
+[source,yaml]
+----
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: ceph-claim-test
+spec:
+  accessModes: <1>
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi <.2>
+----
+<1> The `accessModes` do not enforce access rights but instead act as labels to match a PV to a PVC.
+<2> This claim looks for PVs that offer 2Gi or greater capacity.
+
+. Create the PVC:
++
+[source, bash]
+----
+$  oc create -f ceph-claim-test.yaml
+persistentvolumeclaim "ceph-claim-test" created
+----
+
+. Verify that the PVC was created and bound to the expected PV:
++
+[source, bash]
+----
+$ oc get pvc
+NAME              STATUS    VOLUME         CAPACITY   ACCESSMODES   STORAGECLASS   AGE
+ceph-claim-test   Bound     ceph-pv-test   2Gi        RWO                          8s
+----
+
+. Create the pod object definition:
++
+.Pod object definition example
+[source,yaml]
+----
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ceph-pod1           <1>
+spec:
+  containers:
+  - name: ceph-busybox
+    image: busybox          <2>
+    command: ["sleep", "60000"]
+    volumeMounts:
+    - name: ceph-vol1       <3>
+      mountPath: /usr/share/busybox <4>
+      readOnly: false
+  volumes:
+  - name: ceph-vol1         <3>
+    persistentVolumeClaim:
+      claimName: ceph-claim <5>
+----
+<1> The name of this pod as displayed by `oc get pod`.
+<2> The image run by this pod. In this example, `busybox` is set to `sleep`.
+<3> The name of the volume. This name must be the same in both the `*containers*` and `*volumes*` sections.
+<4> The mount path as seen in the container.
+<5> The PVC bound to the Ceph RBD cluster.
+
+. Create the pod:
++
+[source, bash]
+----
+$ oc create -f ceph-pod-test.yaml
+pod "ceph-pod-test" created
+----
+
+. Verify that the pod was created:
++
+[source, bash]
+----
+$ oc get pod
+NAME        READY     STATUS    RESTARTS   AGE
+ceph-pod1   1/1       Running   0          2m
+----
+
+After a minute or so, the pod status changes to *Running*.
+
+[[using-ceph-rbd-defining-group-and-owner-ids-optional]]
+== Defining group and owner IDs (Optional)
+When using block storage, such as Ceph RBD, the physical block storage is
+*managed* by the pod. The group ID defined in the pod becomes the group ID of
+*both* the Ceph RBD mount inside the container, and the group ID of the actual
+storage itself. Thus, it is usually unnecessary to define a group ID in the pod
+specifiation. However, if a group ID is desired, it can be defined using
+`*fsGroup*`, as shown in the following pod definition fragment:
+
+.Group ID pod definition example
+[source,yaml]
+----
+...
+spec:
+  containers:
+    - name:
+    ...
+  securityContext: <1>
+    fsGroup: 7777  <2>
+...
+----
+<1> `securityContext` must be defined at the pod level, not under a specific container.
+<2> All containers in the pod will have the same `*fsGroup*` ID.
+
+[[using-ceph-rbd-setting-default-secret]]
+== Setting ceph-user-secret as the default for projects
+
+To make the persistent storage available to every project, you need to modify
+the default project template. Adding this to your default project template
+allows every user who has access to create a project access to the Ceph cluster.
+See
+xref:../../admin_guide/managing_projects.adoc#selfprovisioning-projects[modifying
+the default project template] for more information.
+
+.Default project example
+[source,yaml]
+----
+...
+apiVersion: v1
+kind: Template
+metadata:
+  creationTimestamp: null
+  name: project-request
+objects:
+- apiVersion: v1
+  kind: Project
+  metadata:
+    annotations:
+      openshift.io/description: ${PROJECT_DESCRIPTION}
+      openshift.io/display-name: ${PROJECT_DISPLAYNAME}
+      openshift.io/requester: ${PROJECT_REQUESTING_USER}
+    creationTimestamp: null
+    name: ${PROJECT_NAME}
+  spec: {}
+  status: {}
+- apiVersion: v1
+  kind: Secret
+  metadata:
+    name: ceph-user-secret
+  data:
+    key: yoursupersecretbase64keygoeshere <1>
+  type:
+    kubernetes.io/rbd
+...
+----
+<1> Place your Ceph user key here in base64 format. 

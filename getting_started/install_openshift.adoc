@@ -1,0 +1,259 @@
+[[getting-started-install-openshift]]
+= Install {product-title}
+:data-uri:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+toc::[]
+
+[[install-overview]]
+== Overview
+
+This guide introduces you to the basic concepts of {product-title}, and helps
+you install a basic application. This guide is not suitable for deploying or
+installing a production environment of {product-title}.
+
+[[install-prerequisites]]
+=== Prerequisites
+
+To install {product-title}, you will need:
+
+* At least two physical or virtual RHEL 7+ machines, with fully qualified domain
+names (either real world or within a network) and xref:../getting_started/install_openshift.adoc#set-up-password-less-ssh[password-less SSH] access to
+each other. This guide uses `master.openshift.example.com` and
+`node.openshift.example.com`. These machines must be able to ping each other
+using these domain names.
+* A valid Red Hat subscription.
+* Wildcard DNS resolution that resolves your domain to the IP of the node. So,
+an entry like the following in your DNS server:
++
+----
+master.openshift.example.com. 300 IN A <master_ip>
+node.openshift.example.com. 300 IN A <node_ip>
+*.apps.openshift.example.com. 300 IN A <node_ip>
+----
+
+[NOTE]
+.Why the *apps* in your domain name for the wildcard entry?
+====
+When using {product-title} to deploy applications, an internal router needs to proxy
+incoming requests to the corresponding application pod. By using *apps* as part
+of the application domains, the application traffic is accurately marked to the
+right pod.
+
+You can use anything other than *apps*.
+
+----
+*.cloudapps.openshift.example.com. 300 IN A <node_ip>
+----
+====
+
+Once these are configured, use the following steps to set up a two-machine
+{product-title} install.
+
+[[attach-subscription]]
+=== Attach {product-title} Subscription
+
+. As root on the target machines (both master and node), use
+`subscription-manager` to register the systems with Red Hat.
++
+----
+# subscription-manager register
+----
+
+. Pull the latest subscription data from Red Hat Subscription Manager (RHSM):
++
+----
+# subscription-manager refresh
+----
+
+. List the available subscriptions.
++
+----
+# subscription-manager list --available
+----
+
+. Find the pool ID that provides {product-title} subscription and attach it.
++
+----
+# subscription-manager attach --pool=<pool_id>
+----
+
+. Replace the string `<pool_id>` with the pool ID of the pool that provides
+{product-title}. The pool ID is a long alphanumeric string.
+
+These RHEL systems are now authorized to install {product-title}. Now you need
+to tell the systems from where to get {product-title}.
+
+[[set-up-repositories]]
+=== Set Up Repositories
+
+On both master and node, use `subscription-manager` to enable the repositories
+that are necessary in order to install {product-title}. You may have already enabled
+the first two repositories in this example.
+
+----
+# subscription-manager repos --enable="rhel-7-server-rpms" \
+    --enable="rhel-7-server-extras-rpms" \
+    --enable="rhel-7-server-ose-3.11-rpms" \
+    --enable="rhel-7-server-ansible-2.6-rpms"
+----
+
+This command tells your RHEL system that the tools required to install
+{product-title} will be available from these repositories. Now we need the
+{product-title} installer that is based on Ansible.
+
+[[install-package]]
+=== Install the {product-title} Package
+
+The installer for {product-title} is provided by the
+*openshift-ansible* package. Install it using `yum` on the master after running `yum update`.
+
+----
+# yum -y install wget git net-tools bind-utils iptables-services bridge-utils bash-completion kexec-tools sos psacct
+# yum -y update
+# reboot
+
+# yum -y install openshift-ansible
+----
+
+Now install a container engine:
+
+* To install CRI-O:
++
+----
+# yum -y install cri-o
+----
+* To install Docker:
++
+----
+# yum -y install docker
+----
+
+[[set-up-password-less-ssh]]
+=== Set up Password-less SSH Access
+
+Before running the installer on the master, set up password-less SSH access as
+this is required by the installer to gain access to the machines. On the master,
+run the following command.
+
+----
+$ ssh-keygen
+----
+
+Follow the prompts and just hit enter when asked for pass phrase.
+
+An easy way to distribute your SSH keys is by using a `bash` loop:
+
+----
+$ for host in master.openshift.example.com \
+    node.openshift.example.com; \
+    do ssh-copy-id -i ~/.ssh/id_rsa.pub $host; \
+    done
+----
+
+[[run-the-installation-playbooks]]
+=== Run the Installation Playbooks
+
+. See
+xref:../install/example_inventories.adoc#install-config-example-inventories[Example
+Inventory Files] and select the example that most closely matches your desired cluster
+configuration.
++
+
+[IMPORTANT]
+====
+Running Ansible playbooks with the `--tags` or `--check` options is not supported by Red Hat.
+====
+
+[NOTE]
+====
+Further example host files are available as references in the
+*_/usr/share/doc/openshift-ansible-docs-3.11.<version>/docs/example-inventories/_*
+directory (replacing `<version>` with your latest installed version of the
+*openshift-ansible-docs* package, which will update over time as the
+*openshift-ansible* parent package is upgraded). See
+xref:../install/configuring_inventory_file.adoc#install-config-configuring-inventory-file[Configuring Your Inventory File]
+for full documentation on available inventory variables.
+====
+
+. Edit the example inventory to use your host names, and then save it to a file.
+The default location is *_/etc/ansible/hosts_*.
+
+. Change to the playbook directory and run the *_prerequisites.yml_* playbook using your inventory file:
++
+----
+$ cd /usr/share/ansible/openshift-ansible
+$ ansible-playbook -i <inventory_file> playbooks/prerequisites.yml
+----
+
+. Change to the playbook directory and run the *_deploy_cluster.yml_* playbook using your inventory file:
++
+----
+$ cd /usr/share/ansible/openshift-ansible
+$ ansible-playbook -i <inventory_file> playbooks/deploy_cluster.yml
+----
+
+After a successful install, but before you add a new project, you must set up
+basic authentication, user access, and routes.
+
+[[interact-with-openshift]]
+== Interact with {product-title}
+
+{product-title} provides two command line utilities to interact with it.
+
+* `oc`: for normal project and application management
+* `oc adm`: for administrative tasks
++
+include::getting_started/configure_openshift.adoc[tag=ocadm-note]
+
+Use `oc --help` and `oc adm --help` to view all available options.
+
+In addition, you can use the web console to manage projects and applications.
+The web console is available at `\https://<master_fqdn>:8443/console`. In the
+next section, you will see how to create user accounts for accessing the
+console.
+
+[NOTE]
+====
+You can interact with your {product-title} instance from a remote system as well,
+using these command line utilities. Bundled as the OpenShift CLI, you can
+download these utilities for Windows, Mac, or Linux environments in the
+xref:../cli_reference/index.adoc#cli-reference-index[CLI Reference] section.
+====
+
+[[roles-and-authentication]]
+== Understand Roles and Authentication
+
+By default, when installed for the first time, there are no roles or user
+accounts created in {product-title}, so you need to create them. You have the
+option to either create new roles or define a policy that allows anyone to log
+in (to start you off).
+
+Before you do anything else, log in at least one time with the default
+*system:admin* user. On the master, run the following command:
+
+----
+$ oc login -u system:admin
+----
+
+NOTE: All commands from now on should be executed on the master, unless
+otherwise indicated.
+
+By logging in at least one time with this account, you will create the
+*system:admin* user's configuration file, which will allow you to log in
+subsequently.
+
+There is no password for this system account.
+
+Run the following command to verify that {product-title} was installed and
+started successfully. You will get a listing of the master and node, in the
+`Ready` status.
+
+----
+$ oc get nodes
+----
+
+To continue configuring your basic {product-title} environment, follow the steps outlined in xref:../getting_started/configure_openshift.adoc#getting-started-configure-openshift[Configure {product-title}].

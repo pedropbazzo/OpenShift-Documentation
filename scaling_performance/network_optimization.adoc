@@ -1,0 +1,140 @@
+[[scaling-performance-network-optimization]]
+= Network Optimization
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+toc::[]
+
+[[scaling-performance-network-performance]]
+== Optimizing Network Performance
+
+The xref:../architecture/networking/network_plugins.adoc#openshift-sdn[OpenShift SDN]
+uses OpenvSwitch, virtual extensible LAN (VXLAN) tunnels, OpenFlow rules, and
+iptables. This network can be tuned by using jumbo frames, network interface
+cards (NIC) offloads, multi-queue, and ethtool settings.
+
+VXLAN provides benefits over VLANs, such as an increase in networks from 4096 to
+over 16 million, and layer 2 connectivity across physical networks. This allows
+for all pods behind a service to communicate with each other, even if they are
+running on different systems.
+
+VXLAN encapsulates all tunneled traffic in user datagram protocol (UDP) packets.
+However, this leads to increased CPU utilization. Both these outer- and
+inner-packets are subject to normal checksumming rules to guarantee data has not
+been corrupted during transit. Depending on CPU performance, this additional
+processing overhead can cause a reduction in throughput and increased latency
+when compared to traditional, non-overlay networks.
+
+Cloud, VM, and bare metal CPU performance can be capable of handling much more
+than one Gbps network throughput. When using higher bandwidth links such as 10
+or 40 Gbps, reduced performance can occur. This is a known issue in VXLAN-based
+environments and is not specific to containers or {product-title}. Any network
+that relies on VXLAN tunnels will perform similarly because of the VXLAN
+implementation.
+
+If you are looking to push beyond one Gbps, you can:
+
+* Use
+xref:../install_config/configuring_native_container_routing.adoc#install-config-configuring-native-container-routing[Native
+Container Routing]. This option has important operational caveats that do not
+exist when using OpenShift SDN, such as updating routing tables on a router.
+* Evaluate network plug-ins that implement different routing techniques, such as
+border gateway protocol (BGP).
+* Use VXLAN-offload capable network adapters. VXLAN-offload moves the packet
+checksum calculation and associated CPU overhead off of the system CPU and onto
+dedicated hardware on the network adapter. This frees up CPU cycles for use by
+pods and applications, and allows users to utilize the full bandwidth of their
+network infrastructure.
+
+VXLAN-offload does not reduce latency. However, CPU utilization is reduced even
+in latency tests.
+
+[[scaling-performance-optimizing-mtu]]
+=== Optimizing the MTU for Your Network
+
+There are two important maximum transmission units (MTUs): the network
+interface card (NIC) MTU and the SDN overlay's MTU.
+
+The NIC MTU must be less than or equal to the maximum supported value of the NIC
+of your network. If you are optimizing for throughput, pick the largest possible
+value. If you are optimizing for lowest latency, pick a lower value.
+
+The SDN overlay's MTU must be less than the NIC MTU by 50 bytes at a
+minimum. This accounts for the SDN overlay header. So, on a normal ethernet
+network, set this to 1450. On a jumbo frame ethernet network, set this to 8950.
+
+[NOTE]
+====
+This 50 byte overlay header is relevant to the OpenShift SDN. Other SDN
+solutions might require the value to be more or less.
+====
+
+To configure the MTU, edit the appropriate xref:../admin_guide/manage_nodes.adoc#modifying-nodes[node configuration map] 
+and modify the following section:
+
+[source,yaml]
+----
+networkConfig:
+  mtu: 1450 <1>
+  networkPluginName: "redhat/openshift-ovs-subnet" <2>
+----
+<1> Maximum transmission unit (MTU) for the pod overlay network.
+<2> Set to `redhat/openshift-ovs-subnet` for the *ovs-subnet* plug-in,
+`redhat/openshift-ovs-multitenant` for the *ovs-multitenant* plug-in, or
+`redhat/openshift-ovs-networkpolicy` for the *ovs-networkpolicy* plug-in. This
+can also be set to any other CNI-compatible plug-in as well.
+
+[NOTE]
+====
+You must change the MTU size on all masters and nodes that are part of the
+{product-title} SDN. Also, the MTU size of the tun0 interface must be the same
+across all nodes that are part of the cluster.
+====
+
+
+[[scaling-performance-network-subnetting]]
+== Configuring Network Subnets
+
+{product-title} provides IP address management for both pods and services. The
+default values allow for:
+
+- A maximum cluster size of 1024 nodes
+- Each of the 1024 nodes having a /23 allocated to it (510 usable IPs for pods)
+- Around 65,536 IP addresses for services
+
+Under most circumstances, these networks cannot be changed after deployment.
+So, planning ahead for growth is important.
+
+Restrictions for resizing networks are document in the
+xref:../install_config/configuring_sdn.adoc#configuring-the-pod-network-on-masters[Configuring
+SDN documentation].
+
+To plan for a larger environment, the following are suggested values to consider
+adding to the `[OSE3:vars]` section in your Ansible inventory file:
+
+----
+[OSE3:vars]
+osm_cluster_network_cidr=10.128.0.0/10
+----
+
+This will allow for 8192 nodes, each with 510 usable IP addresses.
+
+See the supportability limits in the {product-title} documentation for node/pod limits for the version of software you are installing.
+
+[[scaling-performance-optimizing-ipsec]]
+== Optimizing IPSec
+
+Because encrypting and decrypting node hosts uses CPU power, performance is
+affected both in throughput and CPU usage on the nodes when encryption is
+enabled, regardless of the IP security system being used.
+
+IPSec encrypts traffic at the IP payload level, before it hits the NIC, protecting
+fields that would otherwise be used for NIC offloading. This means that some NIC
+acceleration features may not be usable when IPSec is enabled and will lead to
+decreased throughput and increased CPU usage.

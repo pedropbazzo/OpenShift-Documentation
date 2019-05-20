@@ -1,0 +1,196 @@
+[[dev-guide-copy-files-to-container]]
+= Copying Files to or from a Container
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+toc::[]
+
+== Overview
+
+You can use the CLI to copy local files to or from a remote directory in a container.  This is a useful tool for copying database archives to and from your pods for backup and restore purposes.  It can also be used to copy source code changes into a running pod for development debugging, when the running pod supports hot reload of source files.
+
+[[copying-basic-usage]]
+== Basic Usage
+
+Support for copying local files to or from a container is built into
+xref:../cli_reference/index.adoc#cli-reference-index[the CLI]:
+
+----
+$ oc rsync <source> <destination> [-c <container>]
+----
+
+For example, to copy a local directory to a pod directory:
+
+====
+----
+$ oc rsync /home/user/source devpod1234:/src
+----
+====
+
+Or to copy a pod directory to a local directory:
+
+====
+----
+$ oc rsync devpod1234:/src /home/user/source
+----
+====
+
+[[backing-up-and-restoring-databases]]
+== Backing Up and Restoring Databases
+
+Use `oc rsync` to copy database archives from an existing database container
+to a new database container's persistent volume directory.
+
+[NOTE]
+====
+MySQL is used in the example below. Replace `mysql|MYSQL` with `pgsql|PGSQL` or
+`mongodb|MONGODB` and refer to
+xref:../dev_guide/migrating_applications/index.adoc#dev-guide-migrating-applications[the
+migration guide] to find the exact commands for each of our supported database
+images. The example assumes an existing database container.
+====
+
+
+. Back up the existing database from a running database pod:
++
+----
+$ oc rsh <existing db container>
+# mkdir /var/lib/mysql/data/db_archive_dir
+# mysqldump --skip-lock-tables -h ${MYSQL_SERVICE_HOST} -P ${MYSQL_SERVICE_PORT:-3306} \
+  -u ${MYSQL_USER} --password="$MYSQL_PASSWORD" --all-databases > /var/lib/mysql/data/db_archive_dir/all.sql
+# exit
+----
+
+. Remote sync the archive file to your local machine:
++
+----
+$ oc rsync <existing db container with db archive>:/var/lib/mysql/data/db_archive_dir /tmp/.
+----
+
+. Start a second MySQL pod into which to load the database archive file created above.
+The MySQL pod must have a unique `DATABASE_SERVICE_NAME`.
++
+====
+----
+$ oc new-app mysql-persistent \
+  -p MYSQL_USER=<archived mysql username> \
+  -p MYSQL_PASSWORD=<archived mysql password> \
+  -p MYSQL_DATABASE=<archived database name> \
+  -p DATABASE_SERVICE_NAME='mysql2' <1>
+$ oc rsync /tmp/db_archive_dir new_dbpod1234:/var/lib/mysql/data
+$ oc rsh new_dbpod1234
+----
+<1> `mysql` is the default. In this example, `mysql2` is created.
+====
+
+. Use the appropriate commands to restore the database in the new database
+ container from the copied database archive directory:
++
+.MySQL
+----
+$ cd /var/lib/mysql/data/db_archive_dir
+$ mysql -u root
+$ source all.sql
+$ GRANT ALL PRIVILEGES ON <dbname>.* TO '<your username>'@'localhost'; FLUSH PRIVILEGES;
+$ cd ../; rm -rf /var/lib/mysql/data/db_backup_dir
+----
++
+You now have two MySQL database pods running in your project with the archived
+database.
+
+[[copying-requirements]]
+== Requirements
+
+The `oc rsync` command uses the local `rsync` command if present on the client's
+machine. This requires that the remote container also have the `rsync` command.
+
+If `rsync` is not found locally or in the remote container, then a tar archive
+will be created locally and sent to the container where `tar` will be used to
+extract the files. If `tar` is not available in the remote container, then the
+copy will fail.
+
+The `tar` copy method does not provide the same functionality as `rsync`. For
+example, `rsync` creates the destination directory if it does not exist and will
+only send files that are different between the source and the destination.
+
+[NOTE]
+====
+In Windows, the `cwRsync` client should be installed and added to the PATH for
+use with the `oc rsync` command.
+====
+
+[[specifying-the-copy-source]]
+== Specifying the Copy Source
+
+The source argument of the `oc rsync` command must point to either a local
+directory or a pod directory. Individual files are not currently supported.
+
+When specifying a pod directory the directory name must be prefixed with the pod
+name:
+
+----
+<pod name>:<dir>
+----
+
+Just as with standard `rsync`, if the directory name ends in a path separator (`/`),
+only the contents of the directory are copied to the destination. Otherwise, the
+directory itself is copied to the destination with all its contents.
+
+[[specifying-the-copy-destination]]
+== Specifying the Copy Destination
+
+The destination argument of the `oc rsync` command must point to a directory. If
+the directory does not exist, but `rsync` is used for copy, the directory is
+created for you.
+
+[[deleting-file-at-the-destination]]
+== Deleting Files at the Destination
+
+The `--delete` flag may be used to delete any files in the remote directory that
+are not in the local directory.
+
+[[continuous-syncing-on-file-change]]
+== Continuous Syncing on File Change
+
+Using the `--watch` option causes the command to monitor the source path for any
+file system changes, and synchronizes changes when they occur. With this
+argument, the command runs forever.
+
+Synchronization occurs after short quiet periods to ensure a
+rapidly changing file system does not result in continuous synchronization
+calls.
+
+When using the `--watch` option, the behavior is effectively the same as
+manually invoking `oc rsync` repeatedly, including any arguments normally passed
+to `oc rsync`. Therefore, you can control the behavior via the same flags used
+with manual invocations of `oc rsync`, such as `--delete`.
+
+[[advanced-rsync-features]]
+== Advanced Rsync Features
+
+The `oc rsync` command exposes fewer command line options than standard `rsync`.
+In the case that you wish to use a standard `rsync` command line option which is
+not available in `oc rsync` (for example the `--exclude-from=FILE` option), it
+may be possible to use standard `rsync` 's `--rsh` (`-e`) option or `RSYNC_RSH`
+environment variable as a workaround, as follows:
+
+----
+$ rsync --rsh='oc rsh' --exclude-from=FILE SRC POD:DEST
+----
+
+or:
+
+----
+$ export RSYNC_RSH='oc rsh'
+$ rsync --exclude-from=FILE SRC POD:DEST
+----
+
+Both of the above examples configure standard `rsync` to use `oc rsh` as its
+remote shell program to enable it to connect to the remote pod, and are an
+alternative to running `oc rsync`.

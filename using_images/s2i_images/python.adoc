@@ -1,0 +1,212 @@
+[[using-images-s2i-images-python]]
+= Python
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+
+toc::[]
+
+== Overview
+{product-title} provides
+xref:../../architecture/core_concepts/builds_and_image_streams.adoc#source-build[S2I]
+enabled Python images for building and running Python applications.
+ifndef::openshift-enterprise[]
+The https://github.com/sclorg/s2i-python-container[Python S2I builder image]
+endif::openshift-enterprise[]
+ifdef::openshift-enterprise[]
+The Python S2I builder image
+endif::openshift-enterprise[]
+assembles your application source with any required dependencies to create a
+new image containing your Python application. This resulting image can be run
+either by {product-title} or by a container runtime.
+
+[[s2i-images-python-versions]]
+== Versions
+Currently, {product-title} provides versions
+link:https://github.com/sclorg/s2i-python-container/tree/master/2.7[2.7],
+link:https://github.com/sclorg/s2i-python-container/tree/master/3.3[3.3],
+link:https://github.com/sclorg/s2i-python-container/tree/master/3.4[3.4], and
+https://github.com/sclorg/s2i-python-container/tree/master/3.5[3.5] of Python.
+
+[[s2i-images-python-images]]
+== Images
+
+ifdef::openshift-online[]
+RHEL 7 images are available through the Red Hat Registry:
+
+----
+$ docker pull registry.redhat.io/rhscl/python-27-rhel7
+$ docker pull registry.redhat.io/openshift3/python-33-rhel7
+$ docker pull registry.redhat.io/rhscl/python-34-rhel7
+$ docker pull registry.redhat.io/rhscl/python-35-rhel7
+----
+
+You can use these images through the `python` image stream.
+endif::openshift-online[]
+
+ifndef::openshift-online[]
+These images come in two flavors, depending on your needs:
+
+* RHEL 7
+* CentOS 7
+
+*RHEL 7 Based Images*
+
+The RHEL 7 images are available through the Red Hat Registry:
+
+----
+$ docker pull registry.redhat.io/rhscl/python-27-rhel7
+$ docker pull registry.redhat.io/openshift3/python-33-rhel7
+$ docker pull registry.redhat.io/rhscl/python-34-rhel7
+$ docker pull registry.redhat.io/rhscl/python-35-rhel7
+----
+
+*CentOS 7 Based Images*
+
+These images are available on Docker Hub:
+
+----
+$ docker pull centos/python-27-centos7
+$ docker pull openshift/python-33-centos7
+$ docker pull centos/python-34-centos7
+$ docker pull centos/python-35-centos7
+----
+
+To use these images, you can either access them directly from these
+xref:../../architecture/infrastructure_components/image_registry.adoc#architecture-infrastructure-components-image-registry[image
+registries] or push them into your
+xref:../../architecture/infrastructure_components/image_registry.adoc#integrated-openshift-registry[{product-title}
+container image registry]. Additionally, you can create an
+xref:../../architecture/core_concepts/builds_and_image_streams.adoc#image-streams[image
+stream] that points to the image, either in your container image registry or at the
+external location. Your {product-title} resources can then reference the
+ImageStream. You can find
+https://github.com/openshift/origin/tree/master/examples/image-streams[example
+image stream definitions] for all the provided {product-title} images.
+endif::openshift-online[]
+
+[[s2i-images-python-build-process]]
+== Build Process
+include::using_images/s2i_images/topics/build_process.adoc[]
+
+[[s2i-images-python-configuration]]
+== Configuration
+The Python image supports a number of environment variables which can be set to
+control the configuration and behavior of the Python runtime.
+
+To set these environment variables as part of your image, you can place them into
+xref:../../dev_guide/builds/build_strategies.adoc#environment-files[a *_.s2i/environment_* file]
+inside your source code repository, or define them in
+xref:../../dev_guide/builds/build_strategies.adoc#buildconfig-environment[the environment
+section] of the build configuration's `*sourceStrategy*` definition.
+
+You can also set environment variables to be used with an existing image when
+xref:../../dev_guide/application_lifecycle/new_app.adoc#specifying-environment-variables[creating new
+applications], or by
+xref:../../dev_guide/environment_variables.adoc#set-environment-variables[updating
+environment variables for existing objects] such as deployment configurations.
+
+[NOTE]
+====
+Environment variables that control build behavior must be set as part of the s2i build
+configuration or in the *_.s2i/environment_* file to make them available to the build
+steps.
+====
+
+.Python Environment Variables
+[cols="4a,6a",options="header"]
+|===
+
+|Variable name |Description
+
+|`*APP_FILE*`
+|This variable specifies the file name passed to the
+Python interpreter which is responsible for launching the application. This variable is set to *_app.py_* by default.
+
+|`*APP_MODULE*`
+|This variable specifies the WSGI callable. It follows the pattern
+`$(MODULE_NAME):$(VARIABLE_NAME)`, where the module name is a full dotted path and
+the variable name refers to a function inside the specified module. If you use
+`setup.py` for installing the application, then the module name can be read from
+that file and the variable defaults to `application`. There is an example
+https://github.com/sclorg/s2i-python-container/tree/master/3.3/test/setup-test-app[setup-test-app]
+available.
+
+|`*APP_CONFIG*`
+|This variable indicates the path to a valid Python file with a
+http://docs.gunicorn.org/en/latest/configure.html[gunicorn configuration].
+
+
+|`*DISABLE_COLLECTSTATIC*`
+| Set it to a nonempty value to inhibit the execution of `manage.py collectstatic`
+during the build. Only affects Django projects.
+
+|`*DISABLE_MIGRATE*`
+| Set it to a nonempty value to inhibit the execution of `manage.py migrate`
+when the produced image is run. Only affects Django projects.
+
+|`*PIP_INDEX_URL*`
+| Set this variable to use a custom index URL or mirror to download required
+packages during build process. This only affects packages listed in the
+*_requirements.txt_* file.
+
+| `*WEB_CONCURRENCY*`
+| Set this to change the default setting for the number of
+http://docs.gunicorn.org/en/stable/settings.html#workers[workers]. By default,
+this is set to the number of available cores times 4.
+|===
+
+[[python-hot-deploy]]
+
+== Hot Deploying
+Hot deployment allows you to quickly make and deploy changes to your application
+without having to generate a new S2I build. If you are using Django, hot
+deployment works out of the box.
+
+To enable hot deployment while using Gunicorn, ensure you have a Gunicorn
+configuration file inside your repository with
+https://gunicorn-docs.readthedocs.org/en/latest/settings.html#reload[the
+`*reload*` option] set to *true*. Specify your configuration file using the
+`*APP_CONFIG*` environment variable. For example, see the
+xref:../../dev_guide/application_lifecycle/new_app.adoc#specifying-environment-variables[`oc new-app`]
+command. You can use the
+xref:../../dev_guide/environment_variables.adoc#set-environment-variables[`oc set env`]
+command to update environment variables of existing objects.
+
+[WARNING]
+====
+You should only use this option while developing or debugging; it is not
+recommended to turn this on in your production environment.
+====
+
+To change your source code in a running pod, use the
+xref:../../cli_reference/basic_cli_operations.adoc#troubleshooting-and-debugging-cli-operations[`oc rsh`]
+command to enter the container:
+
+----
+$ oc rsh <pod_id>
+----
+
+After you enter into the running container, your current directory is set to
+*_/opt/app-root/src_*, where the source code is located.
+
+ifdef::openshift-online[]
+[[python-templates]]
+== Python Templates
+
+{product-title} includes an example template to deploy a
+link:https://github.com/sclorg/nodejs-ex[sample Django application].
+This template builds and deploys the sample application on Python 3.5 with a
+PostgreSQL database using a persistent volume for storage.
+
+The sample application can be built and deployed using the
+`rhscl/python-35-rhel7` image with the following command:
+
+----
+$ oc new-app --template=django-psql-persistent
+----
+endif::openshift-online[]

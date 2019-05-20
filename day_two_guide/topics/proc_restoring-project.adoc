@@ -1,0 +1,36 @@
+////
+Restoring a project
+
+Module included in the following assemblies:
+
+* admin_guide/assembly_restoring-cluster.adoc
+* day_two_guide/project_level_tasks.adoc
+////
+
+[id='restoring-project_{context}']
+= Restoring a project
+
+To restore a project, create the new project, then restore any exported files
+by running `oc create -f pods.json`. However, restoring a project from scratch
+requires a specific order because some objects depend on others. For
+example, you must create the `configmaps` before you create any `pods`.
+
+[discrete]
+== Procedure
+
+. If the project was exported as a single file, import it by running the
+following commands:
++
+----
+$ oc new-project <projectname>
+$ oc create -f project.yaml
+$ oc create -f secret.yaml
+$ oc create -f serviceaccount.yaml
+$ oc create -f pvc.yaml
+$ oc create -f rolebindings.yaml
+----
++
+[WARNING]
+====
+Some resources, such as pods and default service accounts, can fail to be created.
+====

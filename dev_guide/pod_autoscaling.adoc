@@ -1,0 +1,395 @@
+[[dev-guide-pod-autoscaling]]
+= Pod Autoscaling
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+
+toc::[]
+
+== Overview
+
+A horizontal pod autoscaler, defined by a `*HorizontalPodAutoscaler*` object,
+specifies how the system should automatically increase or decrease the scale of
+a replication controller or deployment configuration, based on metrics collected
+from the pods that belong to that replication controller or deployment
+configuration.
+
+ifdef::openshift-origin,openshift-enterprise[]
+[[req-for-using-hpas]]
+== Requirements for Using Horizontal Pod Autoscalers
+
+To use horizontal pod autoscalers, you need to install the
+{product-title} metrics server:
+
+----
+$ ansible-playbook \
+/usr/share/ansible/openshift-ansible/playbooks/metrics-server/config.yml \
+-e openshift_metrics_server_install=true
+----
+
+You can verify that the server was installed correctly by running:
+
+----
+$ oc adm top node
+$ oc adm top pod
+----
+
+For additional information on these commands, see
+xref:../admin_guide/manage_nodes.html#viewing-nodes[Viewing Nodes] and
+xref:../admin_guide/managing_pods.adoc#viewing-pods[Viewing Pods].
+
+[[hpa-supported-metrics]]
+== Supported Metrics
+
+The following metrics are supported by horizontal pod autoscalers:
+
+.Metrics
+[cols="3a,5a,5a",options="header"]
+|===
+
+|Metric |Description |API version
+
+|CPU utilization
+|Percentage of the xref:../dev_guide/compute_resources.adoc#dev-cpu-requests[requested CPU]
+|`autoscaling/v1`, `autoscaling/v2beta1`
+
+|Memory utilization
+|Percentage of the requested memory.
+|`autoscaling/v2beta1`
+|===
+
+[[hpa-autoscaling]]
+== Autoscaling
+
+You can create a horizontal pod autoscaler with the `oc autoscale` command and
+specify the minimum and maximum number of pods you want to run, as well as the
+xref:creating-a-hpa[CPU utilization] or xref:pod-autoscaling-memory[memory utilization] your pods should target.
+
+After a horizontal pod autoscaler is created, it begins attempting to query
+Heapster for metrics on the pods. It may take one to two minutes before Heapster
+obtains the initial metrics.
+
+After metrics are available in Heapster, the horizontal pod autoscaler computes
+the ratio of the current metric utilization with the desired metric utilization,
+and scales up or down accordingly. The scaling will occur at a regular interval,
+but it may take one to two minutes before metrics make their way into Heapster.
+
+For replication controllers, this scaling corresponds directly to the replicas
+of the replication controller. For deployment configurations, scaling corresponds
+directly to the replica count of the deployment configuration. Note that autoscaling
+applies only to the latest deployment in the `Complete` phase.
+
+{product-title} automatically accounts for resources and prevents unnecessary autoscaling
+during resource spikes, such as during start up. Pods in the `unready` state
+have `0 CPU` usage when scaling up and the autoscaler ignores the pods when scaling down.
+Pods without known metrics have `0% CPU` usage when scaling up and `100% CPU` when scaling down.
+This allows for more stability during the HPA decision. To use this feature, you must configure
+xref:../dev_guide/application_health.adoc#dev-guide-application-health[readiness
+checks] to determine if a new pod is ready for use.
+
+[[creating-a-hpa]]
+== Autoscaling for CPU Utilization
+
+Use the `oc autoscale` command and specify at least the maximum number of pods
+you want to run at any given time. You can optionally specify the minimum number
+of pods and the average CPU utilization your pods should target, otherwise those
+are given default values from the {product-title} server.
+
+For example:
+
+----
+$ oc autoscale dc/frontend --min 1 --max 10 --cpu-percent=80
+deploymentconfig "frontend" autoscaled
+----
+
+The above example creates a horizontal pod autoscaler with the following
+definition when using the `autoscaling/v1` version of the horizontal pod autoscaler:
+
+.Horizontal Pod Autoscaler Object Definition
+====
+[source,yaml,options="nowrap"]
+----
+apiVersion: autoscaling/v1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: frontend <1>
+spec:
+  scaleTargetRef:
+    kind: DeploymentConfig <2>
+    name: frontend <3>
+    apiVersion: apps/v1 <4>
+    subresource: scale
+  minReplicas: 1 <5>
+  maxReplicas: 10 <6>
+  cpuUtilization:
+    targetCPUUtilizationPercentage: 80 <7>
+----
+<1> The name of this horizontal pod autoscaler object
+<2> The kind of object to scale
+<3> The name of the object to scale
+<4> The API version of the object to scale
+<5> The minimum number of replicas to which to scale down
+<6> The maximum number of replicas to which to scale up
+<7> The percentage of the requested CPU that each pod should ideally be using
+====
+
+Alternatively, the `oc autoscale` command creates a horizontal pod autoscaler
+with the following definition when using the `v2beta1` version of the horizontal pod
+autoscaler:
+
+[source,yaml,options="nowrap"]
+----
+apiVersion: autoscaling/v2beta1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: hpa-resource-metrics-cpu <1>
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1 <2>
+    kind: ReplicationController <3>
+    name: hello-hpa-cpu <4>
+  minReplicas: 1 <5>
+  maxReplicas: 10 <6>
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      targetAverageUtilization: 50 <7>
+----
+<1> The name of this horizontal pod autoscaler object
+<2> The API version of the object to scale
+<3> The kind of object to scale
+<4> The name of the object to scale
+<5> The minimum number of replicas to which to scale down
+<6> The maximum number of replicas to which to scale up
+<7> The average percentage of the requested CPU that each pod should be using
+
+[[pod-autoscaling-memory]]
+== Autoscaling for Memory Utilization
+
+Unlike CPU-based autoscaling, memory-based autoscaling requires specifying the
+autoscaler using YAML instead of using the `oc autoscale` command. Optionally,
+you can specify the minimum number of pods and the average memory utilization
+your pods should target as well, otherwise those are given default values from
+the {product-title} server.
+
+. Memory-based autoscaling is only available with the `v2beta1` version of the
+autoscaling API. Enable memory-based autoscaling by adding the following to your
+cluster's `master-config.yaml` file:
++
+[source,bash]
+----
+...
+apiServerArguments:
+  runtime-config:
+  - apis/autoscaling/v2beta1=true
+...
+----
+
+. Place the following in a file, such as `hpa.yaml`:
++
+[source,yaml,options="nowrap"]
+----
+apiVersion: autoscaling/v2beta1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: hpa-resource-metrics-memory <1>
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1 <2>
+    kind: ReplicationController <3>
+    name: hello-hpa-memory <4>
+  minReplicas: 1 <5>
+  maxReplicas: 10 <6>
+  metrics:
+  - type: Resource
+    resource:
+      name: memory
+      targetAverageUtilization: 50 <7>
+----
+<1> The name of this horizontal pod autoscaler object
+<2> The API version of the object to scale
+<3> The kind of object to scale
+<4> The name of the object to scale
+<5> The minimum number of replicas to which to scale down
+<6> The maximum number of replicas to which to scale up
+<7> The average percentage of the requested memory that each pod should be using
+
+. Then, create the autoscaler from the above file:
++
+----
+$ oc create -f hpa.yaml
+----
+
+[IMPORTANT]
+====
+For memory-based autoscaling to work, memory usage must increase and decrease
+proportionally to the replica count. On average:
+
+* An increase in replica count must lead to an overall decrease in memory
+(working set) usage per-pod.
+* A decrease in replica count must lead to an overall increase in per-pod memory
+usage.
+
+Use the OpenShift web console to check the memory behavior of your application
+and ensure that your application meets these requirements before using
+memory-based autoscaling.
+====
+
+
+[[viewing-a-hpa]]
+== Viewing a Horizontal Pod Autoscaler
+
+To view the status of a horizontal pod autoscaler:
+
+* Use the `oc get` command to view information on the CPU utilization and pod limits:
++
+----
+$ oc get hpa/hpa-resource-metrics-cpu
+NAME                         REFERENCE                                 TARGET    CURRENT  MINPODS        MAXPODS    AGE
+hpa-resource-metrics-cpu     DeploymentConfig/default/frontend/scale   80%       79%      1              10         8d
+----
++
+The output includes the following:
++
+** *Target*. The targeted average CPU utilization across all pods controlled by the deployment configuration.
+** *Current*. The current CPU utilization across all pods controlled by the deployment configuration.
+** *Minpods/Maxpods*. The minimum and maximum number of replicas that can be set by the autoscaler.
+
+* Use the `oc describe` command for detailed information on the horizontal pod autoscaler object.
++
+----
+$ oc describe hpa/hpa-resource-metrics-cpu
+Name:                           hpa-resource-metrics-cpu
+Namespace:                      default
+Labels:                         <none>
+CreationTimestamp:              Mon, 26 Oct 2015 21:13:47 -0400
+Reference:                      DeploymentConfig/default/frontend/scale
+Target CPU utilization:         80% <1>
+Current CPU utilization:        79% <2>
+Min replicas:                   1 <3>
+Max replicas:                   4 <4>
+ReplicationController pods:     1 current / 1 desired
+Conditions: <5>
+  Type                  Status  Reason                  Message
+  ----                  ------  ------                  -------
+  AbleToScale           True    ReadyForNewScale        the last scale time was sufficiently old as to warrant a new scale
+  ScalingActive         True    ValidMetricFound        the HPA was able to successfully calculate a replica count from pods metric http_requests
+  ScalingLimited        False   DesiredWithinRange      the desired replica count is within the acceptable range
+Events:
+----
++
+<1> The average percentage of the requested memory that each pod should be using.
+<2> The current CPU utilization across all pods controlled by the deployment configuration.
+<3> The minimum number of replicas to scale down to.
+<4> The maximum number of replicas to scale up to.
+<5> If the object used the `v2alpha1` API, xref:viewing-a-hpa-status[status conditions] are displayed.
+
+[[viewing-a-hpa-status]]
+=== Viewing Horizontal Pod Autoscaler Status Conditions
+
+You can use the status conditions set to determine
+whether or not the horizontal pod autoscaler is able to scale and whether or not it is currently restricted
+in any way.
+
+The horizontal pod autoscaler status conditions are available with the `v2beta1` version of the
+autoscaling API:
+
+[source,yaml]
+----
+kubernetesMasterConfig:
+  ...
+  apiServerArguments:
+    runtime-config:
+    - apis/autoscaling/v2beta1=true
+----
+
+The following status conditions are set:
+
+* `AbleToScale` indicates whether the horizontal pod autoscaler is able to fetch and update scales, and
+whether any backoff conditions are preventing scaling.
+** A `True` condition indicates scaling is allowed.
+** A `False` condition indicates scaling is not allowed for the reason specified.
+* `ScalingActive` indicates whether the horizontal pod autoscaler is enabled (the replica count of the target is not zero) and
+is able to calculate desired scales.
+** A `True` condition indicates metrics is working properly.
+** A `False` condition generally indicates a problem with fetching metrics.
+* `ScalingLimited` indicates that autoscaling is not allowed because a maximum or minimum replica count was reached.
+** A `True` condition indicates that you need to raise or lower the minimum or maximum replica count in order to scale.
+** A `False` condition indicates that the requested scaling is allowed.
+
+If you need to add or edit this line, restart the {product-title} services:
+
+----
+# master-restart api
+# master-restart controllers
+----
+
+To see the conditions affecting a horizontal pod autoscaler, use `oc describe hpa`. Conditions appear in the `status.conditions` field:
+
+----
+$ oc describe hpa cm-test
+Name:                           cm-test
+Namespace:                      prom
+Labels:                         <none>
+Annotations:                    <none>
+CreationTimestamp:              Fri, 16 Jun 2017 18:09:22 +0000
+Reference:                      ReplicationController/cm-test
+Metrics:                        ( current / target )
+  "http_requests" on pods:      66m / 500m
+Min replicas:                   1
+Max replicas:                   4
+ReplicationController pods:     1 current / 1 desired
+Conditions: <1>
+  Type                  Status  Reason                  Message
+  ----                  ------  ------                  -------
+  AbleToScale       True      ReadyForNewScale    the last scale time was sufficiently old as to warrant a new scale
+  ScalingActive     True      ValidMetricFound    the HPA was able to successfully calculate a replica count from pods metric http_request
+  ScalingLimited    False     DesiredWithinRange  the desired replica count is within the acceptable range
+Events:
+----
+
+<1> The horizontal pod autoscaler status messages.
++
+* The `AbleToScale` condition indicates whether HPA is able to fetch and update scales, as well as whether any backoff-related conditions would prevent scaling.
++
+* The `ScalingActive` condition indicates whether the HPA is enabled (for example, the replica count of the target is not zero) and is able to calculate desired scales. A`False` status generally indicates problems with fetching metrics.
++
+* The `ScalingLimited` condition indicates that the desired scale was capped by the maximum or minimum of the horizontal pod autoscaler. A `True` status generally indicates that you might need to raise or lower the minimum or maximum replica count constraints on your horizontal pod autoscaler.
+
+// The above output and bullets from https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale-walkthrough/#appendix-horizontal-pod-autoscaler-status-conditions
+
+The following is an example of a pod that is unable to scale:
+
+----
+Conditions:
+  Type           Status    Reason            Message
+  ----           ------    ------            -------
+  AbleToScale    False     FailedGetScale    the HPA controller was unable to get the target's current scale: replicationcontrollers/scale.extensions "hello-hpa-cpu" not found
+----
+
+The following is an example of a pod that could not obtain the needed metrics for scaling:
+
+----
+Conditions:
+  Type                  Status    Reason                    Message
+  ----                  ------    ------                    -------
+  AbleToScale           True     SucceededGetScale          the HPA controller was able to get the target's current scale
+  ScalingActive         False    FailedGetResourceMetric    the HPA was unable to compute the replica count: unable to get metrics for resource cpu: no metrics returned from heapster
+----
+
+The following is an example of a pod where the requested autoscaling was less than the required minimums:
+
+----
+Conditions:
+  Type              Status    Reason              Message
+  ----              ------    ------              -------
+  AbleToScale       True      ReadyForNewScale    the last scale time was sufficiently old as to warrant a new scale
+  ScalingActive     True      ValidMetricFound    the HPA was able to successfully calculate a replica count from pods metric http_request
+  ScalingLimited    False     DesiredWithinRange  the desired replica count is within the acceptable range
+Events:
+----

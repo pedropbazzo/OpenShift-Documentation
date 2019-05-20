@@ -1,0 +1,965 @@
+[[architecture-core-concepts-routes]]
+= Routes
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+toc::[]
+
+== Overview
+
+An {product-title} route exposes a
+xref:../../architecture/core_concepts/pods_and_services.adoc#services[service] at a
+host name, such as _www.example.com_, so that external clients can reach it by
+name.
+
+DNS resolution for a host name is handled separately from routing.
+Your administrator may have configured a
+ifdef::openshift-online,openshift-dedicated[]
+DNS wildcard entry
+endif::[]
+ifdef::openshift-origin,openshift-enterprise[]
+xref:../../install/prerequisites.adoc#prereq-dns[DNS wildcard entry]
+endif::[]
+that will resolve to the {product-title} node that is running the
+{product-title} router. If you are using a different host name you may
+need to modify its DNS records independently to resolve to the node that
+is running the router.
+
+Each route consists of a name (limited to 63 characters), a service selector,
+and an optional security configuration.
+
+ifdef::openshift-online,openshift-dedicated[]
+[NOTE]
+====
+Wildcard routes are disabled in {product-title}.
+====
+endif::[]
+
+ifdef::openshift-origin,openshift-enterprise[]
+[[routers]]
+include::architecture/topics/routers.adoc[]
+endif::[]
+
+ifdef::openshift-origin,openshift-enterprise[]
+[[routes-template-routers]]
+
+include::architecture/topics/template_routers.adoc[]
+endif::[]
+
+ifdef::openshift-origin,openshift-enterprise[]
+[[available-router-plug-ins]]
+== Available Router Plug-ins
+
+See the xref:../../architecture/networking/assembly_available_router_plugins.adoc#architecture-additional-concepts-router-plugins[Available router plug-ins section] for the verified available router plug-ins.
+
+Instructions on deploying these routers are available in
+xref:../../install_config/router/index.adoc#install-config-router-overview[Deploying a Router].
+
+[[routes-sticky-sessions]]
+== Sticky Sessions
+
+include::architecture/topics/sticky_sessions.adoc[]
+endif::[]
+
+ifdef::openshift-origin,openshift-enterprise[]
+[[env-variables]]
+
+include::architecture/topics/router_environment_variables.adoc[]
+endif::[]
+
+ifdef::openshift-origin,openshift-enterprise[]
+[[load-balancing]]
+== Load-balancing Strategy
+
+When a route has multiple endpoints, HAProxy distributes requests to the route
+among the endpoints based on the selected load-balancing strategy. This applies
+when no persistence information is available, such
+as on the first request in a session.
+
+The strategy can be one of the following:
+
+- `*roundrobin*`: Each endpoint is used in turn, according to its weight.
+This is the smoothest and fairest algorithm when the server's
+processing time remains equally distributed.
+- `*leastconn*`: The endpoint with the lowest number of connections receives the
+request. Round-robin is performed when multiple endpoints have the same lowest
+number of connections. Use this algorithm when very long sessions are
+expected, such as LDAP, SQL, TSE, or others. Not intended to be used
+with protocols that typically use short sessions such as HTTP.
+- `*source*`: The source IP address is hashed and divided by the total
+weight of the running servers to designate which server will
+receive the request. This ensures that the same client IP
+address will always reach the same server as long as no
+server goes down or up. If the hash result changes due to the
+number of running servers changing, many clients will be
+directed to different servers. This algorithm is generally
+used with passthrough routes.
+
+The `ROUTER_TCP_BALANCE_SCHEME` environment variable sets the default
+strategy for passthorugh routes. The `ROUTER_LOAD_BALANCE_ALGORITHM` environment
+variable sets the default strategy for the router for the remaining routes.
+A xref:route-specific-annotations[route specific annotation],
+`*haproxy.router.openshift.io/balance*`, can be used to control specific routes.
+endif::[]
+
+ifdef::openshift-origin,openshift-enterprise[]
+[[strict-sni]]
+== HAProxy Strict SNI
+
+By default, when a host does not resolve to a route in a HTTPS or TLS SNI
+request, the default certificate is returned to the caller as part of the *503*
+response. This exposes the default certificate and can pose security concerns
+because the wrong certificate is served for a site. The HAProxy `strict-sni`
+option to bind suppresses use of the default certificate.
+
+The `ROUTER_STRICT_SNI` environment variable controls bind processing. When set
+to `true` or `TRUE`, `strict-sni` is added to the HAProxy bind. The default
+setting is `false`.
+
+The option can be set when the router is created or added later.
+
+----
+$ oc adm router --strict-sni
+----
+
+This sets `ROUTER_STRICT_SNI=true`.
+endif::[]
+
+ifdef::openshift-origin,openshift-enterprise[]
+[[ciphers]]
+== Router Cipher Suite
+
+Each client (for example, Chrome 30, or Java8) includes a suite of ciphers used
+to securely connect with the router. The router must have at least one of the
+ciphers for the connection to be complete:
+
+.Router Cipher Profiles
+[cols="2,6", options="header"]
+|===
+|Profile | Oldest compatible client
+|modern| Firefox 27, Chrome 30, IE 11 on Windows 7, Edge, Opera 17, Safari 9, Android 5.0, Java 8
+|intermediate|Firefox 1, Chrome 1, IE 7, Opera 5, Safari 1, Windows XP IE8, Android 2.3, Java 7
+|old|Windows XP IE6, Java 6
+|===
+
+See the link:https://wiki.mozilla.org/Security/Server_Side_TLS[Security/Server
+Side TLS] reference guide for more information.
+
+The router defaults to the `intermediate` profile. You can select a different
+profile using the `--ciphers` option when creating a route, or by changing
+the `ROUTER_CIPHERS` environment variable with the values `modern`,
+`intermediate`, or `old` for an existing router. Alternatively, a set of ":"
+separated ciphers can be provided. The ciphers must be from the set displayed
+by:
+
+----
+openssl ciphers
+----
+endif::[]
+
+ifdef::openshift-origin,openshift-enterprise,openshift-dedicated[]
+[[route-hostnames]]
+== Route Host Names
+In order for services to be exposed externally, an {product-title} route allows
+you to associate a service with an externally-reachable host name. This edge
+host name is then used to route traffic to the service.
+
+When multiple routes from different namespaces claim the same host,
+the oldest route wins and claims it for the namespace. If additional
+routes with different path fields are defined in the same namespace,
+those paths are added. If multiple routes with the same path are
+used, the oldest takes priority.
+
+A consequence of this behavior is that if you have two routes for a host name: an
+older one and a newer one. If someone else has a route for the same host name
+that they created between when you created the other two routes, then if you
+delete your older route, your claim to the host name will no longer be in effect.
+The other namespace now claims the host name and your claim is lost.
+
+.A Route with a Specified Host:
+====
+
+[source,yaml]
+----
+apiVersion: v1
+kind: Route
+metadata:
+  name: host-route
+spec:
+  host: www.example.com  <1>
+  to:
+    kind: Service
+    name: service-name
+----
+<1> Specifies the externally-reachable host name used to expose a service.
+====
+
+.A Route Without a Host:
+====
+
+[source,yaml]
+----
+apiVersion: v1
+kind: Route
+metadata:
+  name: no-route-hostname
+spec:
+  to:
+    kind: Service
+    name: service-name
+----
+====
+
+If a host name is not provided as part of the route definition, then
+{product-title} automatically generates one for you. The generated host name
+is of the form:
+
+----
+<route-name>[-<namespace>].<suffix>
+----
+
+The following example shows the {product-title}-generated host name for the
+above configuration of a route without a host added to a namespace
+*mynamespace*:
+
+.Generated Host Name
+====
+
+----
+no-route-hostname-mynamespace.router.default.svc.cluster.local <1>
+----
+<1> The generated host name suffix is the default routing subdomain
+*router.default.svc.cluster.local*.
+====
+
+ifdef::openshift-origin,openshift-enterprise,openshift-dedicated[]
+A cluster administrator can also
+ifdef::openshift-enterprise,openshift-origin[]
+xref:../../install_config/router/default_haproxy_router.adoc#customizing-the-default-routing-subdomain[customize
+the suffix used as the default routing subdomain]
+endif::[]
+ifdef::openshift-dedicated[]
+customize the suffix used as the default routing subdomain
+endif::[]
+for their environment.
+endif::openshift-origin,openshift-enterprise,openshift-dedicated[]
+
+ifdef::openshift-origin,openshift-enterprise,openshift-dedicated[]
+[[route-types]]
+== Route Types
+Routes can be either secured or unsecured. Secure routes provide the ability to
+use several types of TLS termination to serve certificates to the client.
+Routers support xref:edge-termination[edge],
+xref:passthrough-termination[passthrough], and
+xref:re-encryption-termination[re-encryption] termination.
+
+.Unsecured Route Object YAML Definition
+====
+
+[source,yaml]
+----
+apiVersion: v1
+kind: Route
+metadata:
+  name: route-unsecured
+spec:
+  host: www.example.com
+  to:
+    kind: Service
+    name: service-name
+----
+
+====
+
+Unsecured routes are simplest to configure, as they require no key
+or certificates, but secured routes offer security for connections to
+remain private.
+
+A secured route is one that specifies the TLS termination of the route.
+The available types of termination are xref:secured-routes[described
+below].
+endif::[]
+
+ifdef::openshift-origin,openshift-enterprise,openshift-dedicated[]
+[[path-based-routes]]
+=== Path Based Routes
+Path based routes specify a path component that can be compared against
+a URL (which requires that the traffic for the route be HTTP based) such
+that multiple routes can be served using the same host name, each with a
+different path. Routers should match routes based on the most specific
+path to the least; however, this depends on the router implementation.
+The host name and path are passed through to the backend server so it should be
+able to successfully answer requests for them.
+For example: a request to http://example.com/foo/ that goes to the router will
+result in a pod seeing a request to http://example.com/foo/.
+
+The following table shows example routes and their accessibility:
+
+.Route Availability
+[cols="3*", options="header"]
+|===
+|Route |When Compared to |Accessible
+
+.2+|_www.example.com/test_ |_www.example.com/test_ |Yes
+
+|_www.example.com_ |No
+
+.2+|_www.example.com/test_ and _www.example.com_ |_www.example.com/test_ |Yes
+
+|_www.example.com_ |Yes
+
+.2+|_www.example.com_ |_www.example.com/test_ |Yes (Matched by the host, not the route)
+
+|_www.example.com_ |Yes
+|===
+
+.An Unsecured Route with a Path:
+====
+
+[source,yaml]
+----
+apiVersion: v1
+kind: Route
+metadata:
+  name: route-unsecured
+spec:
+  host: www.example.com
+  path: "/test"   <1>
+  to:
+    kind: Service
+    name: service-name
+----
+
+<1> The path is the only added attribute for a path-based route.
+====
+
+[NOTE]
+====
+Path-based routing is not available when using passthrough TLS, as
+the router does not terminate TLS in that case and cannot read the contents
+of the request.
+====
+endif::[]
+
+ifdef::openshift-origin,openshift-enterprise,openshift-dedicated[]
+[[secured-routes]]
+=== Secured Routes
+Secured routes specify the TLS termination of the route and, optionally,
+provide a key and certificate(s).
+
+[NOTE]
+====
+TLS termination in {product-title} relies on
+link:https://en.wikipedia.org/wiki/Server_Name_Indication[SNI] for serving
+custom certificates. Any non-SNI traffic received on port 443 is handled with
+TLS termination and a default certificate (which may not match the requested
+host name, resulting in validation errors).
+====
+
+Secured routes can use any of the following three types of secure TLS
+termination.
+
+[[edge-termination]]
+*Edge Termination*
+
+With edge termination, TLS termination occurs at the router, prior to proxying
+traffic to its destination. TLS certificates are served by the front end of the
+router, so they must be configured into the route, otherwise the
+ifdef::openshift-enterprise,openshift-origin[]
+xref:../../install_config/router/default_haproxy_router.adoc#using-wildcard-certificates[router's
+default certificate]
+endif::[]
+ifdef::openshift-dedicated,openshift-aro,openshift-online[]
+router's default certificate
+endif::[]
+will be used for TLS termination.
+
+.A Secured Route Using Edge Termination
+====
+
+[source,yaml]
+----
+apiVersion: v1
+kind: Route
+metadata:
+  name: route-edge-secured <1>
+spec:
+  host: www.example.com
+  to:
+    kind: Service
+    name: service-name <1>
+  tls:
+    termination: edge            <2>
+    key: |-                      <3>
+      -----BEGIN PRIVATE KEY-----
+      [...]
+      -----END PRIVATE KEY-----
+    certificate: |-              <4>
+      -----BEGIN CERTIFICATE-----
+      [...]
+      -----END CERTIFICATE-----
+    caCertificate: |-            <5>
+      -----BEGIN CERTIFICATE-----
+      [...]
+      -----END CERTIFICATE-----
+----
+<1> The name of the object, which is limited to 63 characters.
+<2> The `*termination*` field is `edge` for edge termination.
+<3> The `*key*` field is the contents of the PEM format key file.
+<4> The `*certificate*` field is the contents of the PEM format certificate file.
+<5> An optional CA certificate may be required to establish a certificate chain for validation.
+====
+
+Because TLS is terminated at the router, connections from the router to
+the endpoints over the internal network are not encrypted.
+
+Edge-terminated routes can specify an `insecureEdgeTerminationPolicy` that
+enables traffic on insecure schemes (`HTTP`) to be disabled, allowed or
+redirected.
+The allowed values for `insecureEdgeTerminationPolicy` are:
+  `None` or empty (for disabled), `Allow` or `Redirect`.
+The default `insecureEdgeTerminationPolicy` is to disable traffic on the
+insecure scheme. A common use case is to allow content to be served via a
+secure scheme but serve the assets (example images, stylesheets and
+javascript) via the insecure scheme.
+
+.A Secured Route Using Edge Termination Allowing HTTP Traffic
+====
+
+[source,yaml]
+----
+apiVersion: v1
+kind: Route
+metadata:
+  name: route-edge-secured-allow-insecure <1>
+spec:
+  host: www.example.com
+  to:
+    kind: Service
+    name: service-name <1>
+  tls:
+    termination:                   edge   <2>
+    insecureEdgeTerminationPolicy: Allow  <3>
+    [ ... ]
+----
+<1> The name of the object, which is limited to 63 characters.
+<2> The `*termination*` field is `edge` for edge termination.
+<3> The insecure policy to allow requests sent on an insecure scheme `HTTP`.
+====
+
+.A Secured Route Using Edge Termination Redirecting HTTP Traffic to HTTPS
+====
+
+[source,yaml]
+----
+apiVersion: v1
+kind: Route
+metadata:
+  name: route-edge-secured-redirect-insecure <1>
+spec:
+  host: www.example.com
+  to:
+    kind: Service
+    name: service-name <1>
+  tls:
+    termination:                   edge      <2>
+    insecureEdgeTerminationPolicy: Redirect  <3>
+    [ ... ]
+----
+<1> The name of the object, which is limited to 63 characters.
+<2> The `*termination*` field is `edge` for edge termination.
+<3> The insecure policy to redirect requests sent on an insecure scheme `HTTP` to a secure scheme `HTTPS`.
+====
+
+[[passthrough-termination]]
+*Passthrough Termination*
+
+With passthrough termination, encrypted traffic is sent straight to the
+destination without the router providing TLS termination. Therefore no
+key or certificate is required.
+
+.A Secured Route Using Passthrough Termination
+====
+[source,yaml]
+----
+apiVersion: v1
+kind: Route
+metadata:
+  name: route-passthrough-secured <1>
+spec:
+  host: www.example.com
+  to:
+    kind: Service
+    name: service-name <1>
+  tls:
+    termination: passthrough     <2>
+----
+<1> The name of the object, which is limited to 63 characters.
+<2> The `*termination*` field is set to `passthrough`. No other encryption fields are needed.
+====
+
+The destination pod is responsible for serving certificates for the
+traffic at the endpoint. This is currently the only method that can support
+requiring client certificates (also known as two-way authentication).
+
+[NOTE]
+====
+Passthrough routes can also have an `insecureEdgeTerminationPolicy`. The only
+valid values are `None` (or empty, for disabled) or `Redirect`.
+====
+
+[[re-encryption-termination]]
+*Re-encryption Termination*
+
+Re-encryption is a variation on edge termination where the router terminates
+TLS with a certificate, then re-encrypts its connection to the endpoint which
+may have a different certificate. Therefore the full path of the connection
+is encrypted, even over the internal network. The router uses health
+checks to determine the authenticity of the host.
+
+
+.A Secured Route Using Re-Encrypt Termination
+====
+
+[source,yaml]
+----
+apiVersion: v1
+kind: Route
+metadata:
+  name: route-pt-secured <1>
+spec:
+  host: www.example.com
+  to:
+    kind: Service
+    name: service-name <1>
+  tls:
+    termination: reencrypt        <2>
+    key: [as in edge termination]
+    certificate: [as in edge termination]
+    caCertificate: [as in edge termination]
+    destinationCACertificate: |-  <3>
+      -----BEGIN CERTIFICATE-----
+      [...]
+      -----END CERTIFICATE-----
+----
+
+<1> The name of the object, which is limited to 63 characters.
+<2> The `*termination*` field is set to `reencrypt`. Other fields are as in edge
+termination.
+<3> Required for re-encryption. `*destinationCACertificate*`
+specifies a CA certificate to validate the endpoint certificate, securing the
+connection from the router to the destination pods. If the service is using a service signing certificate, or the administrator has specified a default CA certificate for the router and the service has a certificate signed by that CA, this field can be omitted.
+====
+
+If the `*destinationCACertificate*` field is left empty, the router
+automatically leverages the certificate authority that is generated for service
+serving certificates, and is injected into every pod as
+`/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt`. This allows new
+routes that leverage end-to-end encryption without having to generate a
+certificate for the route. This is useful for custom routers or the F5 router,
+which might not allow the `destinationCACertificate` unless the administrator
+has allowed it.
+
+[NOTE]
+====
+Re-encrypt routes can have an `insecureEdgeTerminationPolicy` with all of the
+same values as edge-terminated routes.
+====
+endif::[]
+
+ifdef::openshift-origin,openshift-enterprise[]
+[[router-sharding]]
+== Router Sharding
+include::architecture/topics/router_sharding.adoc[]
+endif::[]
+
+ifdef::openshift-origin,openshift-enterprise,openshift-dedicated[]
+[[alternateBackends]]
+== Alternate Backends and Weights
+include::architecture/topics/alternate_backends_weights.adoc[]
+endif::[]
+
+[[route-specific-annotations]]
+== Route-specific Annotations
+
+Using environment variables, a router can set the default
+options for all the routes it exposes. An individual route can override some
+of these defaults by providing specific configurations in its annotations.
+
+*Route Annotations*
+
+For all the items outlined in this section, you can set annotations on the
+*route definition* for the route to alter its configuration
+
+.Route Annotations
+[cols="3*", options="header"]
+|===
+|Variable | Description | Environment Variable Used as Default
+|`*haproxy.router.openshift.io/balance*`| Sets the load-balancing algorithm. Available options are `source`, `roundrobin`, and `leastconn`. | `ROUTER_TCP_BALANCE_SCHEME` for passthrough routes. Otherwise, use `ROUTER_LOAD_BALANCE_ALGORITHM`.
+|`*haproxy.router.openshift.io/disable_cookies*`| Disables the use of cookies to track related connections. If set to `true` or `TRUE`, the balance algorithm is used to choose which back-end serves connections for each incoming HTTP request. |
+|`*router.openshift.io/cookie_name*`| Specifies an optional cookie to use for
+this route. The name must consist of any combination of upper and lower case letters, digits, "_",
+and "-". The default is the hashed internal key name for the route. |
+|`*haproxy.router.openshift.io/pod-concurrent-connections*`| Sets the maximum number of connections that are allowed to a backing pod from a router.  Note: if there are multiple pods, each can have this many connections.  But if you have multiple routers, there is no coordination among them, each may connect this many times. If not set, or set to 0, there is no limit. |
+|`*haproxy.router.openshift.io/rate-limit-connections*`| Setting `true` or `TRUE` to enables rate limiting functionality. |
+|`*haproxy.router.openshift.io/rate-limit-connections.concurrent-tcp*`| Limits the number of concurrent TCP connections shared by an IP address. |
+|`*haproxy.router.openshift.io/rate-limit-connections.rate-http*`| Limits the rate at which an IP address can make HTTP requests. |
+|`*haproxy.router.openshift.io/rate-limit-connections.rate-tcp*`| Limits the rate at which an IP address can make TCP connections. |
+|`*haproxy.router.openshift.io/timeout*` | Sets a server-side timeout for the route. (TimeUnits) | `ROUTER_DEFAULT_SERVER_TIMEOUT`
+|`*router.openshift.io/haproxy.health.check.interval*`| Sets the interval for the back-end health checks. (TimeUnits) | `ROUTER_BACKEND_CHECK_INTERVAL`
+|`*haproxy.router.openshift.io/ip_whitelist*` | Sets a xref:whitelist[whitelist] for the route. |
+|`*haproxy.router.openshift.io/hsts_header*` | Sets a Strict-Transport-Security header for the edge terminated or re-encrypt route. |
+|===
+
+.A Route Setting Custom Timeout
+====
+[source,yaml]
+----
+apiVersion: v1
+kind: Route
+metadata:
+  annotations:
+    haproxy.router.openshift.io/timeout: 5500ms <1>
+[...]
+----
+<1> Specifies the new timeout with HAProxy supported units (us, ms, s, m, h, d).
+If unit not provided, ms is the default.
+====
+
+[NOTE]
+====
+Setting a server-side timeout value for passthrough routes too low can cause
+WebSocket connections to timeout frequently on that route.
+====
+
+[[whitelist]]
+== Route-specific IP Whitelists
+
+You can restrict access to a route to a select set of IP addresses by adding the
+`haproxy.router.openshift.io/ip_whitelist` annotation on the route. The
+whitelist is a space-separated list of IP addresses and/or CIDRs for the
+approved source addresses. Requests from IP addresses that are not in the
+whitelist are dropped.
+
+Some examples:
+
+When editing a route, add the following annotation to define the desired
+source IP's. Alternatively, use `oc annotate route <name>`.
+
+Allow only one specific IP address:
+
+----
+metadata:
+  annotations:
+    haproxy.router.openshift.io/ip_whitelist: 192.168.1.10
+----
+
+Allow several IP addresses:
+
+----
+metadata:
+  annotations:
+    haproxy.router.openshift.io/ip_whitelist: 192.168.1.10 192.168.1.11 192.168.1.12
+----
+
+Allow an IP CIDR network:
+
+----
+metadata:
+  annotations:
+    haproxy.router.openshift.io/ip_whitelist: 192.168.1.0/24
+----
+
+Allow mixed IP addresses and IP CIDR networks:
+
+----
+metadata:
+  annotations:
+    haproxy.router.openshift.io/ip_whitelist: 180.5.61.153 192.168.1.0/24 10.0.0.0/8
+----
+
+ifdef::openshift-origin,openshift-enterprise[]
+[[wildcard-subdomain-route-policy]]
+== Creating Routes Specifying a Wildcard Subdomain Policy
+
+A wildcard policy allows a user to define a route that covers all hosts within a
+domain (when the router is configured to allow it). A route can specify a
+wildcard policy as part of its configuration using the `wildcardPolicy` field.
+Any routers run with a policy allowing wildcard routes will expose the route
+appropriately based on the wildcard policy.
+
+xref:../../install_config/router/default_haproxy_router.adoc#using-wildcard-routes[Learn how to configure HAProxy routers to allow wildcard routes].
+
+
+.A Route Specifying a Subdomain WildcardPolicy
+====
+[source,yaml]
+----
+apiVersion: v1
+kind: Route
+spec:
+  host: wildcard.example.com  <1>
+  wildcardPolicy: Subdomain   <2>
+  to:
+    kind: Service
+    name: service-name
+----
+<1> Specifies the externally reachable host name used to expose a service.
+<2> Specifies that the externally reachable host name should allow all hosts
+    in the subdomain `example.com`. `*.example.com` is the subdomain for host
+    name `wildcard.example.com` to reach the exposed service.
+====
+
+[[route-status-field]]
+== Route Status
+
+The `route status` field is only set by routers. If changes are made to a route
+so that a router no longer serves a specific route, the status becomes stale.
+The routers do not clear the `route status` field. To remove the stale entries
+in the route status, use the
+link:https://github.com/openshift/origin/blob/master/images/router/clear-route-status.sh[clear-route-status
+script].
+
+[[architecture-core-concepts-routes-deny-allow]]
+== Denying or Allowing Certain Domains in Routes
+
+A router can be configured to deny or allow a specific subset of domains from
+the host names in a route using the `ROUTER_DENIED_DOMAINS` and
+`ROUTER_ALLOWED_DOMAINS` environment variables.
+
+[cols="2"]
+|===
+
+|`ROUTER_DENIED_DOMAINS` | Domains listed are not allowed in any indicated routes.
+|`ROUTER_ALLOWED_DOMAINS` | Only the domains listed are allowed in any indicated routes.
+
+|===
+
+The domains in the list of denied domains take precedence over the list of
+allowed domains. Meaning {product-title} first checks the deny list (if
+applicable), and if the host name is not in the list of denied domains, it then
+checks the list of allowed domains. However, the list of allowed domains is more
+restrictive, and ensures that the router only admits routes with hosts that
+belong to that list.
+
+For example, to deny the `[{asterisk}.]open.header.test`, `[{asterisk}.]okd.io` and
+`[{asterisk}.]block.it` routes for the `myrouter` route:
+
+----
+$ oc adm router myrouter ...
+$ oc set env dc/myrouter ROUTER_DENIED_DOMAINS="open.header.test, okd.io, block.it"
+----
+
+This means that `myrouter` will admit the following based on the route's name:
+
+----
+$ oc expose service/<name> --hostname="foo.header.test"
+$ oc expose service/<name> --hostname="www.allow.it"
+$ oc expose service/<name> --hostname="www.openshift.test"
+----
+
+However, `myrouter` will deny the following:
+
+----
+$ oc expose service/<name> --hostname="open.header.test"
+$ oc expose service/<name> --hostname="www.open.header.test"
+$ oc expose service/<name> --hostname="block.it"
+$ oc expose service/<name> --hostname="franco.baresi.block.it"
+$ oc expose service/<name> --hostname="okd.io"
+$ oc expose service/<name> --hostname="api.okd.io"
+----
+
+Alternatively, to block any routes where the host name is _not_ set to `[{asterisk}.]stickshift.org` or `[{asterisk}.]kates.net`:
+
+----
+$ oc adm router myrouter ...
+$ oc set env dc/myrouter ROUTER_ALLOWED_DOMAINS="stickshift.org, kates.net"
+----
+
+This means that the `myrouter` router will admit:
+
+----
+$ oc expose service/<name> --hostname="stickshift.org"
+$ oc expose service/<name> --hostname="www.stickshift.org"
+$ oc expose service/<name> --hostname="kates.net"
+$ oc expose service/<name> --hostname="api.kates.net"
+$ oc expose service/<name> --hostname="erno.r.kube.kates.net"
+----
+
+However, `myrouter` will deny the following:
+
+----
+$ oc expose service/<name> --hostname="www.open.header.test"
+$ oc expose service/<name> --hostname="drive.ottomatic.org"
+$ oc expose service/<name> --hostname="www.wayless.com"
+$ oc expose service/<name> --hostname="www.deny.it"
+----
+
+To implement both scenarios, run:
+
+----
+$ oc adm router adrouter ...
+$ oc set env dc/adrouter ROUTER_ALLOWED_DOMAINS="okd.io, kates.net" \
+    ROUTER_DENIED_DOMAINS="ops.openshift.org, metrics.kates.net"
+----
+
+This will allow any routes where the host name is set to `[{asterisk}.]okd.io` or
+`[{asterisk}.]kates.net`, and not allow any routes where the host name is set to
+`[{asterisk}.]ops.okd.io` or `[{asterisk}.]metrics.kates.net`.
+
+Therefore, the following will be denied:
+
+----
+$ oc expose service/<name> --hostname="www.open.header.test"
+$ oc expose service/<name> --hostname="ops.okd.io"
+$ oc expose service/<name> --hostname="log.ops.okd.io"
+$ oc expose service/<name> --hostname="www.block.it"
+$ oc expose service/<name> --hostname="metrics.kates.net"
+$ oc expose service/<name> --hostname="int.metrics.kates.net"
+----
+
+However, the following will be allowed:
+
+----
+$ oc expose service/<name> --hostname="okd.io"
+$ oc expose service/<name> --hostname="api.okd.io"
+$ oc expose service/<name> --hostname="m.api.okd.io"
+$ oc expose service/<name> --hostname="kates.net"
+$ oc expose service/<name> --hostname="api.kates.net"
+----
+
+[[architecture-routes-support-for-ingress]]
+== Support for Kubernetes ingress objects
+
+The Kubernetes ingress object is a configuration object determining how inbound
+connections reach internal services. {product-title} has support for these
+objects using a ingress controller configuration file.
+
+This controller watches ingress objects and creates one or more routes to
+satisfy the conditions of the ingress object. The controller is also responsible
+for keeping the ingress object and generated route objects synchronized. This
+includes giving generated routes permissions on the secrets associated with the
+ingress object.
+
+For example, an ingress object configured as:
+
+[source, yaml]
+----
+kind: Ingress
+apiVersion: extensions/v1beta1
+metadata:
+  name: test
+spec:
+  rules:
+  - host: test.com
+    http:
+     paths:
+     - path: /test
+       backend:
+        serviceName: test-1
+        servicePort: 80
+----
+
+generates the following route object:
+
+[source, yaml]
+----
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: test-a34th <1>
+  ownerReferences:
+  - apiVersion: extensions/v1beta1
+    kind: Ingress
+    name: test
+    controller: true
+spec:
+  host: test.com
+  path: /test
+  to:
+    name: test-1
+  port:
+     targetPort: 80
+----
+<1> The name is generated by the route objects, with the ingress name as a prefix.
+
+[NOTE]
+====
+In order for a route to be created, an ingress object must have a host,
+service, and path.
+====
+
+[[disable-namespace-ownership-check]]
+== Disabling the Namespace Ownership Check
+
+Hosts and subdomains are owned by the namespace of the route that first
+makes the claim. Other routes created in the namespace can make claims on
+the subdomain. All other namespaces are prevented from making claims on
+the claimed hosts and subdomains. The namespace that owns the host also
+owns all paths associated with the host, for example `*_www.abc.xyz/path1_*`.
+
+For example, if the host `*_www.abc.xyz_*` is not claimed by any route.
+Creating route `r1` with host `*_www.abc.xyz_*` in namespace `ns1` makes
+namespace `ns1` the owner of host `*_www.abc.xyz_*` and subdomain `abc.xyz`
+for wildcard routes. If another namespace, `ns2`, tries to create a route
+with say a different path `*_www.abc.xyz/path1/path2_*`, it would fail
+because a route in another namespace (`ns1` in this case) owns that host.
+
+With
+xref:../../install_config/router/default_haproxy_router.adoc#using-wildcard-routes[wildcard routes]
+the namespace that owns the subdomain owns all hosts in the subdomain.
+If a namespace owns subdomain `*abc.xyz*` as in the above example,
+another namespace cannot claim `z.abc.xyz`.
+
+By disabling the namespace ownership rules, you can disable these restrictions
+and allow hosts (and subdomains) to be claimed across namespaces.
+
+[WARNING]
+====
+If you decide to disable the namespace ownership checks in your router,
+be aware that this allows end users to claim ownership of hosts
+across namespaces. While this change can be desirable in certain
+development environments, use this feature with caution in production
+environments, and ensure that your cluster policy has locked down untrusted end
+users from creating routes.
+====
+
+For example, with `ROUTER_DISABLE_NAMESPACE_OWNERSHIP_CHECK=true`, if
+namespace `ns1` creates the oldest route `r1`  `*_www.abc.xyz_*`,  it owns only
+the hostname (+ path).  Another namespace can create a wildcard route
+even though it does not have the oldest route in that subdomain (`abc.xyz`)
+and we could potentially have other namespaces claiming other
+non-wildcard overlapping hosts (for example, `foo.abc.xyz`, `bar.abc.xyz`,
+`baz.abc.xyz`) and their claims would be granted.
+
+Any other namespace (for example, `ns2`) can now create
+a route `r2`  `*_www.abc.xyz/p1/p2_*`,  and it would be admitted.  Similarly
+another namespace (`ns3`) can also create a route  `wildthing.abc.xyz`
+with a subdomain wildcard policy and it can own the wildcard.
+
+As this example demonstrates, the policy `ROUTER_DISABLE_NAMESPACE_OWNERSHIP_CHECK=true` is more
+lax and allows claims across namespaces.  The only time the router would
+reject a route with the namespace ownership disabled is if the host+path
+is already claimed.
+
+For example, if a new route `rx` tries to claim `*_www.abc.xyz/p1/p2_*`, it
+would be rejected as route `r2` owns that host+path combination.  This is true whether route `rx`
+is in the same namespace or other namespace since the exact host+path is already claimed.
+
+This feature can be set during router creation or by setting an environment
+variable in the router's deployment configuration.
+
+----
+$ oc adm router ... --disable-namespace-ownership-check=true
+----
+
+----
+$ oc set env dc/router ROUTER_DISABLE_NAMESPACE_OWNERSHIP_CHECK=true
+----
+endif::openshift-origin,openshift-enterprise[]

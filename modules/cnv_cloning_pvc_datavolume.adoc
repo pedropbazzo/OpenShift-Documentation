@@ -1,0 +1,53 @@
+// Module included in the following assemblies:
+//
+// * cnv_users_guide/cnv_users_guide.adoc
+
+[[clone-vm-datavolume]]
+= Cloning the PVC of an existing virtual machine disk
+
+You can clone a PVC of an existing virtual machine disk into a new DataVolume. The new DataVolume can then be used for a new virtual machine.
+
+[NOTE]
+When a DataVolume is created independently of a virtual machine, the lifecycle of the DataVolume is independent of the virtual machine: If the virtual machine is deleted, neither the DataVolume nor its associated PVC will be deleted.
+
+.Prerequisites
+* A PVC of an existing virtual machine disk. The associated virtual machine must be powered down, or the clone process will be queued until the PVC is available. 
+
+.Procedure
+
+. Examine the DataVolume you want to clone to identify the name and namespace of the associated PVC. 
+. Create a YAML file for a DataVolume object that specifies the following parameters:
+[horizontal]
+*metadata: name*:: The name of the new DataVolume.
+*source: pvc: namespace*:: The namespace in which the source PVC exists.
+*source: pvc: name*:: The name of the source PVC.
+*storage*:: The size of the new DataVolume. Be sure to allocate enough space or the cloning operation fails. The size must be the same or larger as the source PVC.
++
+For example:
++
+----
+apiVersion: cdi.kubevirt.io/v1alpha1
+kind: DataVolume
+metadata:
+  name: cloner-datavolume
+spec:
+  source:
+    pvc:
+      namespace: "<source-namespace>"
+      name: "<my-favorite-vm-disk>"
+  pvc:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+storage: 500Mi
+----
+
+. Start the PVC clone by creating the DataVolume:
++
+----
+$ oc create -f <datavolume>.yaml
+----
+
+DataVolumes prevent a virtual machine from starting before the PVC is prepared so you can create a virtual machine that references the new DataVolume while the PVC clones.
+

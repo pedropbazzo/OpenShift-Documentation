@@ -1,0 +1,228 @@
+[[architecture-core-concepts-deployments]]
+= Deployments
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+toc::[]
+
+[[replication-controllers]]
+== Replication controllers
+
+A
+https://kubernetes.io/docs/concepts/workloads/controllers/replicationcontroller/[replication
+controller] ensures that a specified number of replicas of a pod are running at
+all times. If pods exit or are deleted, the replication controller acts to
+instantiate more up to the defined number. Likewise, if there are more running
+than desired, it deletes as many as necessary to match the defined amount.
+
+A replication controller configuration consists of:
+
+1. The number of replicas desired (which can be adjusted at runtime).
+2. A pod definition to use when creating a replicated pod.
+3. A selector for identifying managed pods.
+
+A selector is a set of labels assigned to
+the pods that are managed by the replication controller. These labels are
+included in the pod definition that the replication controller instantiates.
+The replication controller uses the selector to determine how many
+instances of the pod are already running in order to adjust as needed.
+
+The replication controller does not perform auto-scaling based on load or
+traffic, as it does not track either. Rather, this would require its replica
+count to be adjusted by an external auto-scaler.
+
+A replication controller is a core Kubernetes object called `*ReplicationController*`.
+
+The following is an example `*ReplicationController*` definition:
+
+[source,yaml]
+----
+apiVersion: v1
+kind: ReplicationController
+metadata:
+  name: frontend-1
+spec:
+  replicas: 1  <1>
+  selector:    <2>
+    name: frontend
+  template:    <3>
+    metadata:
+      labels:  <4>
+        name: frontend <5>
+    spec:
+      containers:
+      - image: openshift/hello-openshift
+        name: helloworld
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+      restartPolicy: Always
+----
+<1> The number of copies of the pod to run.
+<2> The label selector of the pod to run.
+<3> A template for the pod the controller creates.
+<4> Labels on the pod should include those from the label selector.
+<5> The maximum name length after expanding any parameters is 63 characters.
+
+[[replica-set]]
+== Replica set
+Similar to a xref:replication-controllers[replication controller], a replica set
+ensures that a specified number of pod replicas are running at any given time.
+The difference between a replica set and a replication controller is that a
+replica set supports set-based selector requirements whereas a replication
+controller only supports equality-based selector requirements.
+
+[NOTE]
+====
+Only use replica sets if you require custom update orchestration or do not
+require updates at all, otherwise, use
+xref:deployments-and-deployment-configurations[Deployments].
+Replica sets can be used independently, but are used by deployments to
+orchestrate pod creation, deletion, and updates. Deployments manage their
+replica sets automatically, provide declarative updates to pods, and do not have
+to manually manage the replica sets that they create.
+====
+A replica set is a core Kubernetes object called `*ReplicaSet*`.
+
+The following is an example `*ReplicaSet*` definition:
+
+[source, yaml]
+----
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: frontend-1
+  labels:
+    tier: frontend
+spec:
+  replicas: 3
+  selector: <1>
+    matchLabels: <2>
+      tier: frontend
+    matchExpressions: <3>
+      - {key: tier, operator: In, values: [frontend]}
+  template:
+    metadata:
+      labels:
+        tier: frontend
+    spec:
+      containers:
+      - image: openshift/hello-openshift
+        name: helloworld
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+      restartPolicy: Always
+----
+<1> A label query over a set of resources. The result of `matchLabels` and
+`matchExpressions` are logically conjoined.
+<2> Equality-based selector to specify resources with labels that match the
+selector.
+<3> Set-based selector to filter keys. This selects all resources with key equal
+to `tier` and value equal to `frontend`.
+
+[[jobs]]
+== Jobs
+
+A job is similar to a replication controller, in that its purpose is to create
+pods for specified reasons. The difference is that replication controllers are
+designed for pods that will be continuously running, whereas jobs are for
+one-time pods. A job tracks any successful completions and when the specified
+amount of completions have been reached, the job itself is completed.
+
+The following example computes π to 2000 places, prints it out, then completes:
+
+[source,yaml]
+----
+apiVersion: extensions/v1
+kind: Job
+metadata:
+  name: pi
+spec:
+  selector:
+    matchLabels:
+      app: pi
+  template:
+    metadata:
+      name: pi
+      labels:
+        app: pi
+    spec:
+      containers:
+      - name: pi
+        image: perl
+        command: ["perl",  "-Mbignum=bpi", "-wle", "print bpi(2000)"]
+      restartPolicy: Never
+----
+
+ifndef::openshift-online[]
+See the xref:../../dev_guide/jobs.adoc#dev-guide-jobs[Jobs] topic for more information on how
+to use jobs.
+endif::[]
+
+[[deployments-and-deployment-configurations]]
+== Deployments and Deployment Configurations
+
+Building on replication controllers, {product-title} adds expanded support
+for the software development and deployment lifecycle with the concept
+of deployments.  In the simplest case, a deployment just creates a new
+replication controller and lets it start up pods.  However, {product-title}
+deployments also provide the ability to transition from an existing
+deployment of an image to a new one and also define hooks to be run
+before or after creating the replication controller.
+
+The {product-title} `*DeploymentConfig*` object defines the following
+details of a deployment:
+
+1. The elements of a `*ReplicationController*` definition.
+2. Triggers for creating a new deployment automatically.
+3. The strategy for transitioning between deployments.
+4. Life cycle hooks.
+
+Each time a deployment is triggered, whether manually or automatically,
+a deployer pod manages the deployment (including scaling down the old
+replication controller, scaling up the new one, and running hooks).
+The deployment pod remains for an indefinite amount of time after it
+completes the deployment in order to retain its logs of the deployment.
+When a deployment is superseded by another, the previous replication
+controller is retained to enable easy rollback if needed.
+
+For detailed instructions on how to create and interact with deployments,
+refer to xref:../../dev_guide/deployments/basic_deployment_operations.adoc#dev-guide-basic-deployment-operations[Deployments].
+
+Here is an example `*DeploymentConfig*` definition with some
+omissions and callouts:
+
+[source,yaml]
+----
+apiVersion: v1
+kind: DeploymentConfig
+metadata:
+  name: frontend
+spec:
+  replicas: 5
+  selector:
+    name: frontend
+  template: { ... }
+  triggers:
+  - type: ConfigChange <1>
+  - imageChangeParams:
+      automatic: true
+      containerNames:
+      - helloworld
+      from:
+        kind: ImageStreamTag
+        name: hello-openshift:latest
+    type: ImageChange  <2>
+  strategy:
+    type: Rolling      <3>
+----
+<1> A `*ConfigChange*` trigger causes a new deployment to be created any time the replication controller template changes.
+<2> An `*ImageChange*` trigger causes a new deployment to be created each time a new version of the backing image is available in the named image stream.
+<3> The default `*Rolling*` strategy makes a downtime-free transition between deployments.

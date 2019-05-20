@@ -1,0 +1,52 @@
+// Module included in the following assemblies:
+//
+// * cnv_users_guide/cnv_users_guide.adoc
+
+[[template-vm-configuration-file]]
+= Template: VM configuration file
+
+*vm.yaml*
+
+----
+apiVersion: kubevirt.io/v1alpha3
+kind: VirtualMachine
+metadata:
+  creationTimestamp: null
+  labels:
+    kubevirt-vm: fedora-vm
+  name: fedora-vm
+spec:
+  running: false
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        kubevirt.io/domain: fedora-vm
+    spec:
+      domain:
+        devices:
+          disks:
+          - disk:
+              bus: virtio
+            name: containerdisk
+          - disk:
+              bus: virtio
+            name: cloudinitdisk
+        machine:
+          type: ""
+        resources:
+          requests:
+            memory: 1Gi
+      terminationGracePeriodSeconds: 0
+      volumes:
+      - cloudInitNoCloud:
+          userData: |-
+            #cloud-config
+            password: fedora
+            chpasswd: { expire: False }
+        name: cloudinitdisk
+      - name: containerdisk
+        persistentVolumeClaim:
+          claimName: example-vmdisk-volume
+status: {}
+----

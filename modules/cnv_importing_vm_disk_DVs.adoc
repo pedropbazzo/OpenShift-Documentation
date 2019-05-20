@@ -1,0 +1,146 @@
+// Module included in the following assemblies:
+//
+// * cnv_users_guide/cnv_users_guide.adoc
+
+[[importvm-datavolumes]]
+= Importing an existing virtual machine image with DataVolumes
+
+DataVolume objects provide orchestration of import, clone, and upload operations
+associated with an underlying PVC.  DataVolumes are integrated with KubeVirt and
+they can prevent a virtual machine from being started before the PVC has been
+prepared.
+
+[CAUTION]
+====
+When you import a disk image into a PersistentVolumeClaim, the disk image is
+expanded to use the full storage capacity that is requested in the PVC. To use
+this space, the disk partitions and file system(s) in the virtual machine
+might need to be expanded.
+
+The resizing procedure varies based on the operating system installed on the VM.
+Refer to the operating system documentation for details.
+====
+
+.Prerequisites
+
+* The virtual machine disk can be RAW or QCOW2 format and can be compressed
+using *xz* or *gz*.
+* The disk image must be available at either an *HTTP* or *S3*
+endpoint.
+
+.Procedure
+
+. Identify an *HTTP* or *S3* file server that hosts the virtual disk
+image that you want to import. You need the complete URL in the correct format:
++
+* *_http://www.example.com/path/to/data_*
+* *_s3://bucketName/fileName_*
++
+. If your data source requires authentication credentials, edit the
+*_endpoint-secret.yaml_* file and apply it to the cluster:
++
+----
+apiVersion: v1
+kind: Secret
+metadata:
+  name: <endpoint-secret>
+  labels:
+    app: containerized-data-importer
+type: Opaque
+data:
+  accessKeyId: ""  # <optional: your key or user name, base64 encoded>
+  secretKey:    "" # <optional: your secret or password, base64 encoded>
+----
++
+----
+$ oc apply -f endpoint-secret.yaml
+----
+
+. Edit the VM configuration file, optionally including the
+`secretRef` parameter. In our example, we used a Fedora image:
++
+----
+apiVersion: kubevirt.io/v1alpha3
+kind: VirtualMachine
+metadata:
+  creationTimestamp: null
+  labels:
+    kubevirt.io/vm: vm-fedora-datavolume
+  name: vm-fedora-datavolume
+spec:
+  dataVolumeTemplates:
+  - metadata:
+      creationTimestamp: null
+      name: fedora-dv
+    spec:
+      pvc:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 2Gi
+        storageClassName: local
+      source:
+        http:
+          url: https://download.fedoraproject.org/pub/fedora/linux/releases/28/Cloud/x86_64/images/Fedora-Cloud-Base-28-1.1.x86_64.qcow2
+          secretRef: "" # Optional
+    status: {}
+  running: false
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        kubevirt.io/vm: vm-fedora-datavolume
+    spec:
+      domain:
+        devices:
+          disks:
+          - disk:
+              bus: virtio
+            name: datavolumedisk1
+        machine:
+          type: ""
+        resources:
+          requests:
+            memory: 64M
+      terminationGracePeriodSeconds: 0
+      volumes:
+      - dataVolume:
+          name: fedora-dv
+        name: datavolumedisk1
+status: {}
+----
++
+. Create the virtual machine:
++
+----
+$ oc create -f vm-<name>-datavolume.yaml
+----
++
+The virtual machine and a DataVolume will now be created. The CDI controller
+creates an underlying PVC with the correct annotation and begins the import
+process. When the import completes, the DataVolume status changes to
+*Succeeded* and the virtual machine will be allowed to start.
++
+DataVolume provisioning happens in the background, so there is no need to
+monitor it. You can xref:cnv_controlling_vms.adoc#controlvm[start the VM] and it will not run until the import is complete.
+
+.Optional verification steps
+. Run `$ oc get pods` and look for the importer pod. This pod
+downloads the image from the specified URL and stores it on the provisioned PV.
+
+. Monitor the DataVolume status until it shows *Succeeded*.
++
+----
+$ oc describe dv <data-label> <1>
+----
+<1> The data label for the DataVolume specified in the VirtualMachine configuration file.
+
+. To verify that provisioning is complete and that the VMI has started, try
+accessing its serial console:
++
+----
+$ virtctl console <vm-fedora-datavolume>
+----
+
+

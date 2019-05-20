@@ -1,0 +1,234 @@
+[[creating-images-s2i]]
+= S2I Requirements
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+
+toc::[]
+
+== Overview
+xref:../architecture/core_concepts/builds_and_image_streams.adoc#source-build[Source-to-Image
+(S2I)] is a framework that makes it easy to write images that take application
+source code as an input and produce a new image that runs the assembled
+application as output.
+
+The main advantage of using S2I for building reproducible container images is the
+ease of use for developers. As a builder image author, you must understand two
+basic concepts in order for your images to provide the best possible S2I performance:
+xref:build-process[the build process] and xref:s2i-scripts[S2I scripts].
+
+[[build-process]]
+
+== Build Process
+The build process consists of the following three fundamental elements, which
+are combined into a final container image:
+
+- sources
+- S2I scripts
+- builder image
+
+During the build process, S2I must place sources and scripts inside the builder
+image. To do so, S2I creates a *_tar_* file that contains the sources and
+scripts, then streams that file into the builder image. Before executing the
+*_assemble_* script, S2I untars that file and places its contents into the
+location specified by the `*io.openshift.s2i.destination*`
+label from the builder image, with the default location being the
+*_/tmp_* directory.
+
+For this process to happen, your image must supply the *tar* archiving
+utility (the `tar` command available in `*$PATH*`) and the command line
+interpreter (the `/bin/sh` command); this allows your image to use the fastest
+possible build path. If the `tar` or `/bin/sh` command is not available, the
+`s2i build` process is forced to automatically perform an additional container build
+to put both the sources and the scripts inside the image, and only then run the
+usual build.
+
+See the following diagram for the basic S2I build workflow:
+
+.Build Workflow
+image::s2i-flow.png[S2I workflow]
+
+* Run build's responsibility is to untar the sources, scripts and artifacts
+  (if such exist) and invoke the `assemble` script.  If this is the second run
+  (after catching `tar` or `/bin/sh` not found error) it is responsible only
+  for invoking `assemble` script, since both scripts and sources are already there.
+
+
+[[s2i-scripts]]
+
+== S2I Scripts
+You can write S2I scripts in any programming language, as long as the scripts are
+executable inside the builder image. S2I supports multiple options providing
+`assemble`/`run`/`save-artifacts` scripts. All of these locations are checked on
+each build in the following order:
+
+
+1. A script xref:../dev_guide/builds/build_strategies.adoc#override-builder-image-scripts[specified in the BuildConfig]
+2. A script found in the application source `.s2i/bin` directory
+3. A script found at the default image URL (`io.openshift.s2i.scripts-url` label)
+
+Both the `io.openshift.s2i.scripts-url` label specified in the image and the
+script specified in a BuildConfig can take one of the following forms:
+
+- `image:///path_to_scripts_dir` - absolute path inside the image to a directory where the S2I scripts are located
+- `$$file:///path_to_scripts_dir$$` - relative or absolute path to a directory on the host where the S2I scripts are located
+- `http(s)://path_to_scripts_dir` - URL to a directory where the S2I scripts are located
+
+.S2I Scripts
+[cols="3a,8a",options="header"]
+|===
+
+|Script |Description
+
+|*_assemble_*
+(required)
+|The *_assemble_* script builds the application artifacts from a source
+and places them into appropriate directories inside the image. The workflow for
+this script is:
+
+. Restore build artifacts. If you want to support incremental builds, make sure to define *_save-artifacts_* as well (optional).
+. Place the application source in the desired location.
+. Build the application artifacts.
+. Install the artifacts into locations appropriate for them to run.
+
+|*_run_*
+(required)
+|The *_run_* script executes your application.
+
+|*_save-artifacts_*
+(optional)
+|The *_save-artifacts_* script gathers all dependencies that can speed up the
+build processes that follow. For example:
+
+- For Ruby, *gems* installed by Bundler.
+- For Java, *.m2* contents.
+
+These dependencies are gathered into a tar file and streamed to the standard
+output.
+
+|*_usage_*
+(optional)
+|The *_usage_* script allows you to inform the user how to properly use your
+image.
+
+|*_test/run_*
+(optional)
+|The *_test/run_* script allows you to create a simple process to check if the
+image is working correctly. The proposed flow of that process is:
+
+. Build the image.
+. Run the image to verify the *_usage_* script.
+. Run `s2i build` to verify the *_assemble_* script.
+. Run `s2i build` again to verify the *_save-artifacts_* and *_assemble_* scripts save and restore artifacts functionality. (optional)
+. Run the image to verify the test application is working.
+
+See the xref:s2i_testing.adoc#creating-images-s2i-testing[Testing S2I Images] topic for more information.
+
+NOTE: The suggested location to put the test application built by your
+*_test/run_* script is the *_test/test-app_* directory in your image repository.
+See the https://github.com/openshift/source-to-image/blob/master/docs/cli.md#sti-create[S2I documentation]
+for more information.
+|===
+
+*Example S2I Scripts*
+
+NOTE: The following examples are written in Bash and it is assumed all tar
+contents are unpacked into the *_/tmp/s2i_* directory.
+
+.*_assemble_* script:
+====
+
+----
+#!/bin/bash
+
+# restore build artifacts
+if [ "$(ls /tmp/s2i/artifacts/ 2>/dev/null)" ]; then
+    mv /tmp/s2i/artifacts/* $HOME/.
+fi
+
+# move the application source
+mv /tmp/s2i/src $HOME/src
+
+# build application artifacts
+pushd ${HOME}
+make all
+
+# install the artifacts
+make install
+popd
+----
+====
+
+.*_run_* script:
+====
+
+----
+#!/bin/bash
+
+# run the application
+/opt/application/run.sh
+----
+====
+
+.*_save-artifacts_* script:
+====
+
+----
+#!/bin/bash
+
+pushd ${HOME}
+if [ -d deps ]; then
+    # all deps contents to tar stream
+    tar cf - deps
+fi
+popd
+
+----
+====
+
+.*_usage_* script:
+====
+
+----
+#!/bin/bash
+
+# inform the user how to use the image
+cat <<EOF
+This is a S2I sample builder image, to use it, install
+https://github.com/openshift/source-to-image
+EOF
+----
+====
+
+[[using-images-with-onbuild-instructions]]
+
+== Using Images with ONBUILD Instructions
+The `ONBUILD` instructions can be found in many official container images. For
+example:
+
+- Ruby
+- Node.js
+- Python
+
+See the link:https://docs.docker.com/engine/reference/builder/#onbuild[Docker
+documentation] for more information on `ONBUILD`.
+
+Upon startup, S2I detects whether the builder image contains `sh` and `tar` binaries
+which are necessary for the S2I process to inject build inputs.  If the builder image
+does not contain these prerequisites, it will attempt to instead perform a container build
+to layer the inputs.  If the builder image includes `ONBUILD` instructions, S2I
+will instead fail the build because the `ONBUILD` instructions would be executed
+during the layering process, and that equates to performing a generic container
+build which is less secure than an S2I build and requires explicit permissions.
+
+Therefore you should ensure that your S2I builder image either does not contain
+`ONBUILD` instructions, or ensure that it has the necessary `sh` and `tar` binary
+prerequisites.
+
+== External References
+* link:https://blog.openshift.com/create-s2i-builder-image/[S2I Image Creation Tutorial]
+* link:https://github.com/openshift/source-to-image[S2I Project Repository]

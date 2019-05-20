@@ -1,0 +1,13 @@
+[[creating-images-index]]
+= Overview
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+
+This guide provides best practices on writing and testing container images that can be used on {product-title}.
+ifdef::openshift-enterprise,openshift-origin[]
+Once you have created an image, you can push it to
+the xref:../install_config/registry/index.adoc#install-config-registry-overview[internal registry].
+endif::[]

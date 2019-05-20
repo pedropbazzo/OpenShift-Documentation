@@ -1,0 +1,270 @@
+[[dev-guide-advanced-build-operations]]
+= Advanced Build Operations
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+toc::[]
+
+[[build-resources]]
+== Setting Build Resources
+
+By default, builds are completed by pods using unbound resources, such as memory
+and CPU. These resources can be limited by specifying resource limits in a
+project's default container limits.
+
+You can also limit resource use by specifying resource limits as part of the
+build configuration. In the following example, each of the `resources`,
+`cpu`, and `memory` parameters are optional:
+
+[source,yaml]
+----
+apiVersion: "v1"
+kind: "BuildConfig"
+metadata:
+  name: "sample-build"
+spec:
+  resources:
+    limits:
+      cpu: "100m" <1>
+      memory: "256Mi" <2>
+----
+<1> `cpu` is in CPU units: `100m` represents 0.1 CPU units (100 * 1e-3).
+<2> `memory` is in bytes: `256Mi` represents 268435456 bytes (256 * 2 ^ 20).
+
+However, if a xref:../../dev_guide/compute_resources.adoc#dev-quotas[quota] has
+been defined for your project, one of the following two items is required:
+
+- A `resources` section set with an explicit `requests`:
++
+[source,yaml]
+----
+resources:
+  requests: <1>
+    cpu: "100m"
+    memory: "256Mi"
+----
+<1> The `requests` object contains the list of resources that correspond to
+the list of resources in the quota.
+
+ifdef::openshift-enterprise,openshift-dedicated,openshift-aro,openshift-origin[]
+- A xref:../../admin_guide/limits.adoc#admin-guide-limits[limit range] defined in your project, where the
+defaults from the `LimitRange` object apply to pods created during the
+build process.
+endif::[]
+ifdef::openshift-online[]
+- A limit range defined in your project, where the
+defaults from the `LimitRange` object apply to pods created during the
+build process.
+endif::[]
+
+Otherwise, build pod creation will fail, citing a failure to satisfy quota.
+
+[[builds-setting-maximum-duration]]
+== Setting Maximum Duration
+
+When defining a `BuildConfig`, you can define its maximum duration by setting
+the  `completionDeadlineSeconds` field. It is specified in seconds and is not
+set by default. When not set, there is no maximum duration enforced.
+
+The maximum duration is counted from the time when a build pod gets scheduled in
+the system, and defines how long it can be active, including the time needed to
+pull the builder image. After reaching the specified timeout, the build is
+terminated by {product-title}.
+
+The following example shows the part of a `BuildConfig` specifying
+`completionDeadlineSeconds` field for 30 minutes:
+
+----
+spec:
+  completionDeadlineSeconds: 1800
+----
+
+[NOTE]
+====
+This setting is not supported with the Pipeline Strategy option.
+====
+
+[[dev-guide-assigning-builds-to-nodes]]
+== Assigning Builds to Specific Nodes
+
+Builds can be targeted to run on specific nodes by specifying labels in the
+`nodeSelector` field of a build configuration. The `nodeSelector` value is a set
+of key/value pairs that are matched to `node` labels when scheduling the build
+pod.
+
+[source,yaml]
+----
+apiVersion: "v1"
+kind: "BuildConfig"
+metadata:
+  name: "sample-build"
+spec:
+  nodeSelector:<1>
+    key1: value1
+    key2: value2
+----
+<1> Builds associated with this build configuration will run only on nodes with the `key1=value2` and `key2=value2` labels.
+
+The `nodeSelector` value can also be controlled by cluster-wide default and
+override values. Defaults will only be applied if the build configuration does
+not define any key/value pairs for the `nodeSelector` and also does not define
+an explicitly empty map value of `nodeSelector:{}`. Override values will replace
+values in the build configuration on a key by key basis.
+
+ifdef::openshift-enterprise,openshift-origin[]
+See
+xref:../../install_config/build_defaults_overrides.adoc#install-config-build-defaults-overrides[Configuring Global Build Defaults and Overrides] for more information.
+endif::[]
+
+[NOTE]
+====
+If the specified `NodeSelector` cannot be matched to a node with those labels,
+the build still stay in the `Pending` state indefinitely.
+====
+
+[[dev-guide-chaining-builds]]
+== Chaining Builds
+
+For compiled languages (Go, C, C++, Java, etc.), including the dependencies
+necessary for compilation in the application image might increase the size of
+the image or introduce vulnerabilities that can be exploited.
+
+To avoid these problems, two builds can be chained together: one that produces
+the compiled artifact, and a second build that places that artifact in a
+separate image that runs the artifact.
+ifndef::openshift-online[]
+In the following example, a
+xref:../../architecture/core_concepts/builds_and_image_streams.adoc#source-build[Source-to-Image]
+build is combined with a
+xref:../../architecture/core_concepts/builds_and_image_streams.adoc#docker-build[Docker]
+build to compile an artifact that is then placed in a separate runtime image.
+
+[NOTE]
+====
+Although this example chains a Source-to-Image build and a Docker build, the
+first build can use any strategy that will produce an image containing the
+desired artifacts, and the second build can use any strategy that can consume
+input content from an image.
+====
+
+image::chained-build.png[Chained Build]
+
+The first build takes the application source and produces an image containing a
+WAR file. The image is pushed to the `artifact-image` image stream. The path of
+the output artifact will depend on the *_assemble_* script of the
+Source-to-Image builder used. In this case, it will be output to
+*_/wildfly/standalone/deployments/ROOT.war_*.
+
+[source,yaml]
+----
+apiVersion: v1
+kind: BuildConfig
+metadata:
+  name: artifact-build
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: artifact-image:latest
+  source:
+    git:
+      uri: https://github.com/openshift/openshift-jee-sample.git
+  strategy:
+    sourceStrategy:
+      from:
+        kind: ImageStreamTag
+        name: wildfly:10.1
+        namespace: openshift
+----
+
+The second build uses xref:build_inputs.adoc#image-source[Image Source] with a
+path to the WAR file inside the output image from the first build. An inline
+*_Dockerfile_* copies that WAR file into a runtime image.
+
+[source,yaml]
+----
+apiVersion: v1
+kind: BuildConfig
+metadata:
+  name: image-build
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: image-build:latest
+  source:
+    dockerfile: |-
+      FROM jee-runtime:latest
+      COPY ROOT.war /deployments/ROOT.war
+    images:
+    - from: <1>
+        kind: ImageStreamTag
+        name: artifact-image:latest
+      paths: <2>
+      - sourcePath: /wildfly/standalone/deployments/ROOT.war
+        destinationDir: "."
+  strategy:
+    dockerStrategy:
+      from: <3>
+        kind: ImageStreamTag
+        name: jee-runtime:latest
+  triggers:
+  - imageChange: {}
+    type: ImageChange
+----
+<1> `from` specifies that the Docker build should include the output of the image
+from the `artifact-image` image stream, which was the target of the previous
+build.
+<2> `paths` specifies which paths from the target image to include in the current
+Docker build.
+<3> The runtime image is used as the source image for the Docker build.
+
+The result of this setup is that the output image of the second build does not
+need to contain any of the build tools that are needed to create the WAR file.
+Also, because the second build contains an
+xref:triggering_builds.adoc#image-change-triggers[image change trigger],
+whenever the first build is run and produces a new image with the binary
+artifact, the second build is automatically triggered to produce a runtime image
+that contains that artifact. Therefore, both builds behave as a single build
+with two stages.
+endif::[]
+[[build-pruning]]
+== Build Pruning
+
+By default, builds that have completed their lifecycle are persisted indefinitely.
+You can limit the number of previous builds that are retained by supplying a positive
+integer value for `successfulBuildsHistoryLimit` or `failedBuildsHistoryLimit`
+as shown in the following sample build configuration.
+
+[source,yaml]
+----
+apiVersion: "v1"
+kind: "BuildConfig"
+metadata:
+  name: "sample-build"
+spec:
+  successfulBuildsHistoryLimit: 2 <1>
+  failedBuildsHistoryLimit: 2 <2>
+----
+<1> `successfulBuildsHistoryLimit` will retain up to two builds with a status of `completed`.
+<2> `failedBuildsHistoryLimit` will retain up to two builds with a status of `failed`, `cancelled`, or `error`.
+
+Build pruning is triggered by the following actions:
+
+ - Updating a build configuration.
+ - A build completes its lifecycle.
+
+Builds are sorted by their creation timestamp with the oldest builds being pruned first.
+
+ifdef::openshift-enterprise,openshift-origin[]
+[NOTE]
+====
+Administrators can manually prune builds using the xref:../../admin_guide/pruning_resources.adoc#pruning-builds['oc adm' object pruning command].
+====
+endif::[]

@@ -1,0 +1,260 @@
+[[security-deployment]]
+= Deployment
+{product-author}
+{product-version]
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+toc::[]
+
+[[security-deployment-what-can-be-deployed]]
+== Controlling What Can Be Deployed in a Container
+
+If something happens during the build process, or if a vulnerability is
+discovered after an image has been deployed, you can use tooling for automated,
+policy-based deployment. You can use triggers to rebuild and replace images
+instead of patching running containers, which is not recommended.
+
+image::secure_deployments.png["Secure Deployments", align="center"]
+
+For example, you build an application using three container image layers: core,
+middleware, and applications. An issue is discovered in the core image and that
+image is rebuilt. After the build is complete, the image is pushed to the
+OpenShift Container Registry. {product-title} detects that the image has changed
+and automatically rebuilds and deploys the application image, based on the
+defined triggers. This change incorporates the fixed libraries and ensures that
+the production code is identical to the most current image.
+
+The `oc set triggers` command can be used to set a deployment trigger for a
+deployment configuration. For example, to set an `ImageChangeTrigger` in a
+deployment configuration called `frontend`:
+
+----
+$ oc set triggers dc/frontend \
+    --from-image=myproject/origin-ruby-sample:latest \
+    -c helloworld
+----
+
+[discrete]
+[[security-deployment-further-reading-1]]
+==== Further Reading
+
+- _{product-title} Developer Guide_
+** xref:../dev_guide/deployments/how_deployments_work.adoc#dev-guide-how-deployments-work[How Deployments Work]
+** xref:../dev_guide/deployments/basic_deployment_operations.adoc#triggers[Setting Deployment Triggers]
+** xref:../dev_guide/application_lifecycle/promoting_applications.adoc#dev-guide-promoting-applications[Application Life Cycle Management -> Promoting Applications Across Environments]
+
+[[security-deployment-from-where-images-deployed]]
+== Controlling What Image Sources Can Be Deployed
+
+It is important that the intended images are actually being deployed, that they
+are from trusted sources, and they have not been altered. Cryptographic signing
+provides this assurance. {product-title} enables cluster administrators to apply
+security policy that is broad or narrow, reflecting deployment environment and
+security requirements. Two parameters define this policy:
+
+- one or more registries (with optional project namespace)
+- trust type (accept, reject, or require public key(s))
+
+With these policy parameters, registries or parts of registries, even individual
+images, may be whitelisted (accept), blacklisted (reject), or define a trust
+relationship using trusted public key(s) to ensure the source is
+cryptographically verified. The policy rules apply to nodes. Policy may be
+applied uniformly across all nodes or targeted for different node workloads (for
+example, build, zone, or environment).
+
+.Example Image Signature Policy File
+----
+{
+    "default": [{"type": "reject"}],
+    "transports": {
+        "docker": {
+            "access.redhat.com": [
+                {
+                    "type": "signedBy",
+                    "keyType": "GPGKeys",
+                    "keyPath": "/etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release"
+                }
+            ]
+        },
+        "atomic": {
+            "172.30.1.1:5000/openshift": [
+                {
+                    "type": "signedBy",
+                    "keyType": "GPGKeys",
+                    "keyPath": "/etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release"
+                }
+            ],
+            "172.30.1.1:5000/production": [
+                {
+                    "type": "signedBy",
+                    "keyType": "GPGKeys",
+                    "keyPath": "/etc/pki/example.com/pubkey"
+                }
+            ],
+            "172.30.1.1:5000": [{"type": "insecureAcceptAnything"}]
+        }
+    }
+}
+----
+
+The policy can be saved onto a node as *_/etc/containers/policy.json_*. This
+example enforces the following rules:
+
+. Require images from the Red Hat Registry (`access.redhat.com`) to be
+signed by the Red Hat public key.
+. Require images from the OpenShift Container Registry in the *openshift*
+namespace to be signed by the Red Hat public key.
+. Require images from the OpenShift Container Registry in the *production*
+namespace to be signed by the public key for `example.com`.
+. Reject all other registries not specified by the global `default` definition.
+
+For specific instructions on configuring a host, see
+xref:../install/host_preparation.adoc#enabling-image-signature-support[Enabling Image Signature Support].
+See the section below for details on xref:security-deployment-signature-transports[Signature Transports].
+For more details on image signature policy, see the
+link:https://github.com/containers/image/blob/master/docs/policy.json.md[Signature verification policy file format] source code documentation.
+
+[[security-deployment-signature-transports]]
+=== Signature Transports
+
+A signature transport is a way to store and retrieve the binary signature blob.
+There are two types of signature transports.
+
+- `atomic`: Managed by the {product-title} API.
+- `docker`: Served as a local file or by a web server.
+
+The {product-title} API manages signatures that use the `atomic` transport type.
+You must store the images that use this signature type in the 
+the OpenShift Container Registry. Because the *docker/distribution* 
+xref:../admin_guide/image_signatures.adoc#reading-image-signatures-via-registry-api[`extensions` API]
+auto-discovers the image signature endpoint, no additional
+configuration is required.
+
+Signatures that use the `docker` transport type are served by local file or web
+server. These signatures are more flexible: you can serve images from any 
+container image registry and use an independent server to deliver binary
+signatures. According to the
+link:https://github.com/containers/image/blob/master/docs/signature-protocols.md[Signature access protocols],
+you access the signatures for each image directly; the root of the server
+directory does not display its file structure.
+
+However, the `docker` transport type requires additional configuration. You must
+configure the nodes with the URI of the signature server by placing
+arbitrarily-named YAML files into a directory on the host system,
+*_/etc/containers/registries.d_* by default. The YAML configuration files contain a
+registry URI and a signature server URI, or _sigstore_:
+
+.Example Registries.d File
+----
+docker:
+    access.redhat.com:
+        sigstore: https://access.redhat.com/webassets/docker/content/sigstore
+----
+
+In this example, the Red Hat Registry, `access.redhat.com`, is the signature
+server that provides signatures for the `docker` transport type. Its URI is
+defined in the `sigstore` parameter. You might name this file 
+*_/etc/containers/registries.d/redhat.com.yaml_* and use Ansible to
+automatically place the file on each node in your cluster. No service
+restart is required since policy and *_registries.d_* files are dynamically
+loaded by the container runtime.
+
+For more details, see the
+link:https://github.com/containers/image/blob/master/docs/registries.d.md[Registries Configuration Directory] or
+link:https://github.com/containers/image/blob/master/docs/signature-protocols.md[Signature access protocols] source code documentation.
+
+[discrete]
+[[security-deployment-further-reading-2]]
+==== Further Reading
+
+- _{product-title} Cluster Administration Guide_
+** xref:../admin_guide/scheduling/scheduler.adoc#admin-guide-scheduler[Default Scheduling]
+
+- _Red Hat Knowledgebase_
+** link:https://access.redhat.com/articles/2750891[Container Image Signing Integration Guide]
+
+- _Source Code Reference_
+** link:https://github.com/containers/image/blob/master/docs/policy.json.md[Image signing policy]
+** link:https://github.com/containers/image/blob/master/docs/signature-protocols.md[Signature transports]
+** link:https://github.com/containers/image/blob/master/docs/atomic-signature.md[Signature format]
+
+[[security-deployment-secrets-configmaps]]
+== Secrets and ConfigMaps
+
+The `Secret` object type provides a mechanism to hold sensitive information such
+as passwords, {product-title} client configuration files, *_dockercfg_* files,
+and private source repository credentials. Secrets decouple sensitive content
+from pods. You can mount secrets into containers using a volume plug-in or the
+system can use secrets to perform actions on behalf of a pod.
+
+For example, to add a secret to your deployment configuration using the web
+console so that it can access a private image repository:
+
+. Create a new project.
+
+. Navigate to *Resources -> Secrets* and create a new secret. Set *Secret Type* to
+*Image Secret* and *Authentication Type* to *Image Registry Credentials* to
+enter credentials for accessing a private image repository.
+
+. When creating a deployment configuration (for example, from the *Add to Project ->
+Deploy Image* page), set the *Pull Secret* to your new secret.
+
+`ConfigMaps` are similar to secrets, but are designed to support working with
+strings that do not contain sensitive information. The `ConfigMap` object holds
+key-value pairs of configuration data that can be consumed in pods or used to
+store configuration data for system components such as controllers.
+
+[discrete]
+[[security-deployment-further-reading-3]]
+==== Further Reading
+
+- _{product-title} Developer Guide_
+** xref:../dev_guide/secrets.adoc#dev-guide-secrets[Secrets]
+** xref:../dev_guide/configmaps.adoc#dev-guide-configmaps[ConfigMaps]
+
+[[security-deployment-sccs]]
+== Security Context Constraints (SCCs)
+
+You can use _security context constraints_ (SCCs) to define a set of conditions
+that a pod (a collection of containers) must run with in order to be accepted
+into the system.
+
+Some aspects that can be managed by SCCs include:
+
+- Running of privileged containers.
+- Capabilities a container can request to be added.
+- Use of host directories as volumes.
+- SELinux context of the container.
+- Container user ID.
+
+If you have the required permissions, you can adjust the default SCC policies to
+be more permissive.
+
+[discrete]
+[[security-deployment-further-reading-4]]
+==== Further Reading
+
+- _{product-title} Architecture_: xref:../architecture/additional_concepts/authorization.adoc#security-context-constraints[Security Context Constraints]
+ifdef::openshift-enterprise,openshift-origin[]
+- _{product-title} Installing Clusters_: xref:../install/prerequisites.adoc#security-warning[Security Warning]
+** Discusses privileged containers
+endif::[]
+
+[[security-deployment-cd-tooling]]
+== Continuous Deployment Tooling
+
+You can integrate your own continuous deployment (CD) tooling with
+{product-title}.
+
+By leveraging CI/CD and {product-title}, you can automate the process of
+rebuilding the application to incorporate the latest fixes, testing, and
+ensuring that it is deployed everywhere within the environment.
+
+////
+<Is this automatic with OCP? Should we include a procedure here to show the user how to set up any automation?>
+////

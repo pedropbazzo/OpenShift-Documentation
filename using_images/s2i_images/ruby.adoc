@@ -1,0 +1,232 @@
+[[using-images-s2i-images-ruby]]
+= Ruby
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+
+toc::[]
+
+== Overview
+{product-title} provides
+xref:../../architecture/core_concepts/builds_and_image_streams.adoc#source-build[S2I]
+enabled Ruby images for building and running Ruby applications.
+ifndef::openshift-enterprise[]
+The https://github.com/sclorg/s2i-ruby-container[Ruby S2I builder image]
+endif::openshift-enterprise[]
+ifdef::openshift-enterprise[]
+The Ruby S2I builder image
+endif::openshift-enterprise[]
+assembles your application source with any required dependencies to create a
+new image containing your Ruby application. This resulting image can be run either by {product-title} or by a container runtime.
+
+[[s2i-images-ruby-versions]]
+== Versions
+Currently, {product-title} provides versions
+link:https://github.com/sclorg/s2i-ruby-container/tree/master/2.0[2.0],
+link:https://github.com/sclorg/s2i-ruby-container/tree/master/2.2[2.2], and
+link:https://github.com/sclorg/s2i-ruby-container/tree/master/2.3[2.3] of Ruby.
+
+[[s2i-images-ruby-images]]
+== Images
+
+ifdef::openshift-online[]
+RHEL 7 images are available through the Red Hat registry:
+
+----
+$ docker pull registry.redhat.io/openshift3/ruby-20-rhel7
+$ docker pull registry.redhat.io/rhscl/ruby-22-rhel7
+$ docker pull registry.redhat.io/rhscl/ruby-23-rhel7
+----
+
+You can use these images through the `ruby` image stream.
+endif::openshift-online[]
+
+ifndef::openshift-online[]
+These images come in two flavors, depending on your needs:
+
+* RHEL 7
+* CentOS 7
+
+*RHEL 7 Based Images*
+
+The RHEL 7 images are available through the Red Hat registry:
+
+----
+$ docker pull registry.redhat.io/openshift3/ruby-20-rhel7
+$ docker pull registry.redhat.io/rhscl/ruby-22-rhel7
+$ docker pull registry.redhat.io/rhscl/ruby-23-rhel7
+----
+
+*CentOS 7 Based Images*
+
+These images are available on Docker Hub:
+
+----
+$ docker pull openshift/ruby-20-centos7
+$ docker pull openshift/ruby-22-centos7
+$ docker pull centos/ruby-23-centos7
+----
+
+To use these images, you can either access them directly from these
+xref:../../architecture/infrastructure_components/image_registry.adoc#architecture-infrastructure-components-image-registry[image
+registries] or push them into your
+xref:../../architecture/infrastructure_components/image_registry.adoc#integrated-openshift-registry[{product-title}
+container image registry]. Additionally, you can create an
+xref:../../architecture/core_concepts/builds_and_image_streams.adoc#image-streams[image
+stream] that points to the image, either in your container image registry or at the
+external location. Your {product-title} resources can then reference the
+ImageStream. You can find
+https://github.com/openshift/origin/tree/master/examples/image-streams[example
+image stream definitions] for all the provided {product-title} images.
+endif::openshift-online[]
+
+[[s2i-images-ruby-build-process]]
+== Build Process
+include::using_images/s2i_images/topics/build_process.adoc[]
+
+[[s2i-images-ruby-config]]
+== Configuration
+The Ruby image supports a number of environment variables which can be set to
+control the configuration and behavior of the Ruby runtime.
+
+To set these environment variables as part of your image, you can place them into
+xref:../../dev_guide/builds/build_strategies.adoc#environment-files[a *_.s2i/environment_* file]
+inside your source code repository, or define them in
+xref:../../dev_guide/builds/build_strategies.adoc#buildconfig-environment[the environment
+section] of the build configuration's `*sourceStrategy*` definition.
+
+You can also set environment variables to be used with an existing image when
+xref:../../dev_guide/application_lifecycle/new_app.adoc#specifying-environment-variables[creating new
+applications], or by
+xref:../../dev_guide/environment_variables.adoc#set-environment-variables[updating
+environment variables for existing objects] such as deployment configurations.
+
+[NOTE]
+====
+Environment variables that control build behavior must be set as part of the s2i build
+configuration or in the *_.s2i/environment_* file to make them available to the build
+steps.
+====
+
+.Ruby Environment Variables
+[cols="4a,6a",options="header"]
+|===
+
+|Variable name |Description
+
+|`*RACK_ENV*`
+|This variable specifies the environment within which the Ruby application is
+deployed; for example, `production`, `development`, or `test`. Each level has
+different behavior in terms of logging verbosity, error pages, and ruby gem
+installation. The application assets are only compiled if `*RACK_ENV*` is set to
+`production`; the default value is `production`.
+
+|`*RAILS_ENV*`
+|This variable specifies the environment within which the Ruby on Rails
+application is deployed; for example, `production`, `development`, or `test`.
+Each level has different behavior in terms of logging verbosity, error pages,
+and ruby gem installation. The application assets are only compiled if
+`*RAILS_ENV*` is set to `production`. This variable is set to `${RACK_ENV}` by default.
+
+|`*DISABLE_ASSET_COMPILATION*`
+|When set to `true`, this variable disables the process of asset compilation.
+Asset compilation only happens when the application runs in a production
+environment. Therefore, you can use this variable when assets have already been
+compiled.
+
+|`*PUMA_MIN_THREADS*`, `*PUMA_MAX_THREADS*`
+|This variable indicates the minimum and maximum number of threads that will be
+available in link:https://github.com/puma/puma[Puma]'s thread pool.
+
+|`*PUMA_WORKERS*`
+|This variable indicates the number of worker processes to be launched in Puma's
+link:https://github.com/puma/puma#clustered-mode[clustered mode] (when Puma runs
+more than two processes). If not explicitly set, the default behavior sets
+`*PUMA_WORKERS*` to a value that is appropriate for the memory available to the
+container and the number of cores on the host.
+
+|`*RUBYGEM_MIRROR*`
+|Set this variable to use a custom RubyGems mirror URL to download required gem
+packages during the build process.
+Note: This environment variable is only available for Ruby 2.2+ images.
+|===
+
+[[ruby-hot-deploy]]
+
+== Hot Deploying
+Hot deployment allows you to quickly make and deploy changes to your application
+without having to generate a new S2I build. The method for enabling hot
+deployment in this image differs based on the application type.
+
+*Ruby on Rails Applications*
+
+For Ruby on Rails application, run the built Rails application with the
+`*RAILS_ENV=development*` environment variable passed to the running pod. For an
+existing deployment configuration, you can use
+xref:../../dev_guide/environment_variables.adoc#set-environment-variables[the
+`oc set env`] command:
+
+----
+$ oc set env dc/rails-app RAILS_ENV=development
+----
+
+*Other Types of Ruby Applications (Sinatra, Padrino, etc.)*
+
+For other types of Ruby applications, your application must be built with a gem
+that can reload the server every time a change to the source code is made inside
+the running container. Those gems are:
+
+* link:https://github.com/rtomayko/shotgun[Shotgun]
+* link:https://github.com/alexch/rerun[Rerun]
+* link:https://github.com/johnbintz/rack-livereload[Rack-livereload]
+
+In order to be able to run your application in development mode, you must modify
+the xref:../../creating_images/s2i.adoc#s2i-scripts[S2I *_run_* script] so that
+the web server is launched by the chosen gem, which checks for changes in the
+source code.
+
+After you build your application image with your version of the
+xref:../../creating_images/s2i.adoc#s2i-scripts[S2I *_run_* script], run the
+image with the `*RACK_ENV=development*` environment variable. For example, see the
+xref:../../dev_guide/application_lifecycle/new_app.adoc#specifying-environment-variables[`oc new-app`]
+command. You can use the
+xref:../../dev_guide/environment_variables.adoc#set-environment-variables[`oc set env`]
+command to update environment variables of existing objects.
+
+[WARNING]
+====
+You should only use this option while developing or debugging; it is not
+recommended to turn this on in your production environment.
+====
+
+To change your source code in a running pod, use the
+xref:../../cli_reference/basic_cli_operations.adoc#troubleshooting-and-debugging-cli-operations[`oc rsh`]
+command to enter the container:
+
+----
+$ oc rsh <pod_id>
+----
+
+After you enter into the running container, your current directory is set to
+*_/opt/app-root/src_*, where the source code is located.
+
+ifdef::openshift-online[]
+[[ruby-templates]]
+== Ruby Templates
+
+{product-title} includes an example template to deploy a
+link:https://github.com/sclorg/rails-ex[sample Rails application].
+This template builds and deploys the sample application on Ruby 2.3 with a
+PostgreSQL database using a persistent volume for storage.
+
+The sample application can be built and deployed using the `rhscl/ruby-23-rhel7`
+image with the following command:
+
+----
+$ oc new-app --template=rails-pgsql-persistent
+----
+endif::openshift-online[]

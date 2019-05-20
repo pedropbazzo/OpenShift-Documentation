@@ -1,0 +1,22 @@
+[[dev-guide-index]]
+= Overview
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+
+This guide is intended for application developers, and provides instructions for
+setting up and configuring a workstation to develop and deploy applications in
+an {product-title} cloud environment. This includes detailed instructions and
+examples to help developers:
+
+. xref:../dev_guide/application_lifecycle/new_app.adoc#dev-guide-new-app[Create new applications]
+. xref:../dev_guide/projects.adoc#dev-guide-projects[Monitor and configure projects]
+. xref:../dev_guide/templates.adoc#dev-guide-templates[Generate configurations using templates]
+. xref:../dev_guide/builds/index.adoc#dev-guide-how-builds-work[Manage builds, including build strategy options and webhooks]
+. xref:../dev_guide/deployments/how_deployments_work.adoc#dev-guide-how-deployments-work[Define deployments, including deployment strategies]
+. xref:../dev_guide/routes.adoc#dev-guide-routes[Create and manage routes]
+. xref:../dev_guide/secrets.adoc#dev-guide-secrets[Create and configure secrets]
+. xref:../dev_guide/integrating_external_services.adoc#dev-guide-integrating-external-services[Integrate external services, such as databases and SaaS endpoints]
+. xref:../dev_guide/application_health.adoc#dev-guide-application-health[Check application health using probes]

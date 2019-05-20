@@ -1,0 +1,174 @@
+[[architecture-core-concepts-projects-and-users]]
+= Projects and Users
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+toc::[]
+
+[[users]]
+== Users
+
+Interaction with {product-title} is associated with a user. An {product-title}
+user object represents an actor which may be granted permissions in the system
+by
+ifdef::openshift-enterprise,openshift-origin[]
+xref:../../admin_guide/manage_rbac.adoc#managing-role-bindings[adding
+roles to them or to their groups].
+endif::[]
+ifdef::openshift-dedicated[]
+adding roles to them or to their groups.
+endif::[]
+
+Several types of users can exist:
+
+[cols="1,4"]
+|===
+
+|*Regular users*
+|This is the way most interactive {product-title} users will be
+represented. Regular users are created automatically in the system upon
+first login, or can be created via the API. Regular users are represented
+with the `*User*` object. Examples: `joe` `alice`
+
+|*System users*
+|Many of these are created automatically when the infrastructure
+ is defined, mainly for the purpose of enabling the infrastructure to
+ interact with the API securely. They include a cluster administrator
+ (with access to everything), a per-node user, users for use by routers
+ and registries, and various others. Finally, there is an `*anonymous*`
+ system user that is used by default for unauthenticated requests. Examples:
+`system:admin` `system:node:node1.example.com`
+
+|*Service accounts*
+|These are special system users associated with projects; some are created automatically when
+the project is first created, while project administrators can create more
+for the purpose of defining access to the contents of each xref:projects[project].
+Service accounts are represented with the `*ServiceAccount*` object. Examples:
+`system:serviceaccount:default:deployer` `system:serviceaccount:foo:builder`
+
+|===
+
+Every user must xref:../additional_concepts/authentication.adoc#architecture-additional-concepts-authentication[authenticate] in
+some way in order to access {product-title}. API requests with no authentication
+or invalid authentication are authenticated as requests by the `*anonymous*`
+system user. Once authenticated, policy determines what the user is
+xref:../additional_concepts/authorization.adoc#architecture-additional-concepts-authorization[authorized] to do.
+
+[[namespaces]]
+== Namespaces
+
+A Kubernetes namespace provides a mechanism to scope resources in a cluster.
+In {product-title}, a xref:projects[project] is a Kubernetes namespace with
+additional annotations.
+
+Namespaces provide a unique scope for:
+
+- Named resources to avoid basic naming collisions.
+- Delegated management authority to trusted users.
+- The ability to limit community resource consumption.
+
+Most objects in the system are scoped by namespace, but some are
+excepted and have no namespace, including nodes and users.
+
+The
+https://kubernetes.io/docs/tasks/administer-cluster/namespaces/[Kubernetes
+documentation] has more information on namespaces.
+
+[[projects]]
+== Projects
+A project is a Kubernetes namespace with additional annotations, and is the central vehicle
+by which access to resources for regular users is managed.
+A project allows a community of users to organize and manage their content in
+isolation from other communities. Users must be given access to projects by administrators,
+or if allowed to create projects, automatically have access to their own projects.
+
+Projects can have a separate `*name*`, `*displayName*`, and `*description*`.
+
+- The mandatory `*name*` is a unique identifier for the project and is most visible when using the CLI tools or API. The maximum name length is 63 characters.
+- The optional `*displayName*` is how the project is displayed in the web console (defaults to `*name*`).
+- The optional `*description*` can be a more detailed description of the project and is also visible in the web console.
+
+Each project scopes its own set of:
+
+[cols="1,4"]
+|===
+
+|*Objects*
+|Pods, services, replication controllers, etc.
+
+|*Policies*
+|Rules for which users can or cannot perform actions on objects.
+
+|*Constraints*
+|Quotas for each kind of object that can be limited.
+
+|*Service accounts*
+|Service accounts act automatically with designated access to objects in the project.
+
+|===
+
+Cluster administrators can xref:../../dev_guide/projects.adoc#dev-guide-projects[create projects]
+and
+ifdef::openshift-enterprise,openshift-origin[]
+xref:../../admin_guide/manage_rbac.adoc#managing-role-bindings[delegate
+administrative rights]
+endif::openshift-enterprise,openshift-origin[]
+ifdef::openshift-dedicated,openshift-aro,openshift-online[]
+delegate administrative rights
+endif::openshift-dedicated,openshift-aro,openshift-online[]
+for the project to any member of the user community.
+Cluster administrators can also allow developers to create
+ifdef::openshift-enterprise,openshift-origin[]
+xref:../../admin_guide/managing_projects.adoc#selfprovisioning-projects[their own projects].
+endif::openshift-enterprise,openshift-origin[]
+ifdef::openshift-dedicated,openshift-aro,openshift-online[]
+their own projects.
+endif::openshift-dedicated,openshift-aro,openshift-online[]
+
+Developers and administrators can xref:../../dev_guide/projects.adoc#dev-guide-projects[interact
+with projects] using xref:../../cli_reference/index.adoc#cli-reference-index[the CLI] or the
+xref:../infrastructure_components/web_console.adoc#architecture-infrastructure-components-web-console[web console].
+
+[[architecture-projects-projects-at-install]]
+=== Projects provided at installation
+
+{product-title} comes with a number of projects out of the box, and projects
+starting with `openshift-` are the most essential to users.
+These projects host master components that run as pods and other infrastructure
+components. The pods created in these namespaces that have a
+link:https://kubernetes.io/docs/tasks/administer-cluster/guaranteed-scheduling-critical-addon-pods/#rescheduler-guaranteed-scheduling-of-critical-add-ons[critical pod annotation]
+are considered critical, and they have guaranteed admission by kubelet.
+Pods created for master components in these namespaces are already marked as
+critical.
+
+ifdef::openshift-online[]
+[[projects-idling]]
+== Project Idling
+In {product-title} Starter, a project that is inactive for more than 24 hours
+is idled. When a project's network activity falls below a configured threshold,
+a project is deemed inactive. When a project is idled, the replica count is set
+to `0` and all pods are deleted. All persistent volumes (PVs) and persistent
+volume claims (PVCs) in the project are left untouched. Upon receiving network
+traffic, the replica count will be scaled back to whatever it was before being
+idled.
+
+In the web console, you will see your deployment as *Idled due to inactivity*
+and you can manually scale the deployment back up.
+
+If network traffic does not restore a project's replica counts, then you may
+have to manually scale up the deployment.
+
+[[account-pruning]]
+== Account Pruning
+If your {product-title} Starter account is inactive, meaning that you have had
+no running pods in your project for 3 days, you will receive a warning email
+that your account is to be deprovisioned. If you do not take corrective action
+and create pods within 5 days, your account is automatically deprovisioned. Once
+your account is deprovisioned, you can register again.
+endif::[]

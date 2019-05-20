@@ -1,0 +1,273 @@
+[[getting-started-dedicated-administrators]]
+= Administering an {product-title} Cluster
+:data-uri:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+toc::[]
+
+== Overview
+
+As an administrator of an {product-title} cluster, your account has additional
+permissions and access to all user-created projects in your organization's
+cluster. While logged in to an account with this role, the basic
+xref:../cli_reference/basic_cli_operations.adoc#cli-reference-basic-cli-operations[developer CLI] (the `oc`
+command) allows you increased visibility and management capabilities over
+objects across projects, while the
+xref:../cli_reference/admin_cli_operations.adoc#cli-reference-admin-cli-operations[administrator CLI] (commands
+under the `oc adm` command, and formerly the `oadm` command) open up additional
+operations.
+
+ifdef::openshift-dedicated[]
+[NOTE]
+====
+While your account does have these increased permissions, the actual cluster
+maintenance and host configuration is still performed by the {product-title}
+Operations Team. If you would like to request a change to your cluster that you
+cannot perform using the administrator CLI, open a support case on the
+https://access.redhat.com/support/[Red Hat Customer Portal].
+====
+endif::[]
+
+ifdef::openshift-aro[]
+[NOTE]
+====
+While your account does have these increased permissions, the actual cluster
+maintenance and host configuration is performed by the Azure cluster administrator.
+====
+
+{product-title} administrators have the following additional permissions:
+
+ * create/get/watch/list/update/patch/delete on LimitRange and ResourceQuota objects in all customer projects
+ * create/get/watch/list/update/patch/delete on ClusterServiceBroker objects
+ * “admin” ClusterRole in all customer projects
+
+endif::[]
+
+[[gs-dedicated-admin-downloading-the-cli]]
+== Downloading the CLI
+
+The `oc` CLI used for both normal developer operations and administrator
+operations is available for download from the *Command Line Tools* page in the
+web console. See
+xref:../cli_reference/get_started_cli.adoc#cli-reference-get-started-cli[Get
+Started with the CLI] for more detailed installation steps.
+
+[[gs-dedicated-admin-logging-in]]
+== Logging In and Verifying Permissions
+
+You can log in as an {product-title} cluster administration via the web console
+or CLI, just as you would if you were an application developer.
+
+When you xref:../dev_guide/authentication.adoc#web-console-authentication[log in
+to the web console], all user-created projects across the cluster are visible
+from the main *Projects* page.
+
+Use the standard `oc login` command to log in with the CLI:
+
+----
+$ oc login <your_instance_url>
+----
+
+All projects are visible using:
+
+----
+$ oc get projects
+----
+
+ifndef::openshift-aro[]
+When your account has the *dedicated-cluster-admin* cluster role
+xref:../architecture/additional_concepts/authorization.adoc#roles[bound] to it,
+you are automatically bound to the *dedicated-project-admin* for any new
+projects that are created by users in the cluster.
+
+To verify if your account has administrator privileges, run the following
+command against a user-created project to view its default
+xref:../architecture/additional_concepts/authorization.adoc#architecture-additional-concepts-authorization[role bindings].
+If you are a cluster administrator, you will see your account listed under
+subjects for the *dedicated-project-admin* role binding for the project:
+
+----
+$ oc describe rolebinding.rbac -n <project_name>
+
+Name:		admin
+Labels:		<none>
+Annotations:	<none>
+Role:
+  Kind:	ClusterRole
+  Name:	admin
+Subjects:
+  Kind	Name			Namespace
+  ----	----			---------
+  User	fred@example.com <1>
+
+
+Name:		dedicated-project-admin
+Labels:		<none>
+Annotations:	<none>
+Role:
+  Kind:	ClusterRole
+  Name:	dedicated-project-admin
+Subjects:
+  Kind	Name			Namespace
+  ----	----			---------
+  User	alice@example.com <2>
+  User	bob@example.com <2>
+...
+----
+<1> The *fred@example.com* user is a normal, project-scoped administrator for this
+project.
+<2> The *alice@example.com* and *bob@example.com* users are cluster administrators.
+
+To view details on your increased permissions, and the sets of
+xref:../architecture/additional_concepts/authorization.adoc#evaluating-authorization[verbs
+and resources] associated with the *dedicated-cluster-admin* and
+*dedicated-project-admin* roles, run the following:
+
+----
+$ oc describe clusterrole.rbac dedicated-cluster-admin
+$ oc describe clusterrole.rbac dedicated-project-admin
+----
+
+[[gs-dedicated-admin-managing-admin-list]]
+== Managing Dedicated Administrators
+
+Administrator roles are managed using a `dedicated-admins` group on the cluster.
+Existing members of this group can edit membership. To view a list of current
+dedicated administrators by user name, you can use the following command:
+
+----
+$ oc describe group dedicated-admins
+----
+
+To add a new member to the `dedicated-admins` group:
+
+----
+$ oc adm groups add-users dedicated-admins <user_name>
+----
+
+To remove an existing user from the `dedicated-admins` group:
+
+----
+$ oc adm groups remove-users dedicated-admins <user_name>
+----
+
+If this group is currently empty or if you need assistance editing group
+membership, open a support case on the
+link:https://access.redhat.com/support/[Red Hat Customer Portal].
+
+ifndef::openshift-aro[]
+[[managing-dedicated-readers-group]]
+== Managing the Dedicated Readers Group
+
+Users with a *dedicated-reader* role are granted edit and view access to the
+*dedicated-reader* project and view-only access to the other projects.
+
+To view a list of current dedicated readers by user name, you can use the
+following command:
+
+----
+$ oc describe group dedicated-readers
+----
+
+To add a new member to the `dedicated-readers` group, if you have
+`dedicated-admin` access:
+
+----
+$ oc adm groups add-users dedicated-readers <user_name>
+----
+
+To remove an existing user from the `dedicated-readers` group, if you have
+`dedicated-admin` access:
+
+----
+$ oc adm groups remove-users dedicated-readers <user_name>
+----
+endif::[]
+
+[[gs-dedicated-admin-granting-permissions]]
+== Granting Permissions to Users or Groups
+
+To grant permissions to other
+xref:../architecture/additional_concepts/authentication.adoc#users-and-groups[users
+or groups], you can add, or _bind_, a role to them using the following commands:
+
+----
+$ oc adm policy add-role-to-user <role> <user_name>
+$ oc adm policy add-role-to-group <role> <group_name>
+----
+
+See xref:../admin_guide/manage_rbac.adoc#admin-guide-manage-rbac[Managing RBAC]
+for more details on these and related authorization tasks.
+endif::[]
+
+[[gs-dedicated-admin-creating-service-accounts]]
+== Creating Service Accounts
+
+You can create a
+xref:../architecture/core_concepts/projects_and_users.adoc#users[service
+account] to be able to run applications like Jenkins that make calls back to
+{product-title}.
+
+See the xref:../dev_guide/service_accounts.adoc#dev-guide-service-accounts[Developer Guide] for basic
+service account management tasks, which as a cluster administrator you can
+perform in any user-created project, and see
+xref:../admin_guide/service_accounts.adoc#admin-guide-service-accounts[Configuring Service Accounts] for more
+advanced, cluster-wide settings.
+
+ifndef::openshift-aro[]
+[[gs-dedicated-admin-accessing-cluster-administrator-console]]
+== Accessing Cluster Administrator Console
+
+{product-title} provides a cluster administrator console tailored toward
+application development and cluster administrator personas.
+
+Users have a choice of experience based on their role or technical abilities, including:
+
+* An administrator with Containers as a Service (CaaS) experience and with heavy exposure to Kubernetes.
+* An application developer with Platform as a Service (PaaS) experience and standard {product-title} UX.
+
+Sessions are not shared across the consoles, but credentials are.
+
+image::311-cluster-console.png[cluster console]
+endif::[]
+
+ifndef::openshift-aro[]
+`dedicated-admins` have the additional capability of accessing the Prometheus, Grafana, and Alertmanager
+dashboards. The link:https://prometheus.io/[Prometheus] dashboard can be used to query cluster-wide
+metrics. The link:https://grafana.com/[Grafana] dashboard provides predefined graphs of many Prometheus
+metrics. The link:https://prometheus.io/docs/alerting/alertmanager/[Alertmanager] dashboard tracks alerting
+of link:https://docs.openshift.com/container-platform/3.11/install_config/prometheus_cluster_monitoring.html#alerting-rules[predefined rules]
+across the cluster.
+
+[IMPORTANT]
+====
+While `dedicated-admins` have access to Alertmanager, the changing of any configuration (including, but not limited to,
+silencing alerts) can impact the visibility by Red Hat SRE into cluster issues and is strongly discouraged.
+====
+
+
+[[gs-dedicated-admin-managing-quotas-and-limit-ranges]]
+== Managing Quotas and Limit Ranges
+
+As an administrator, you are able to view, create, and modify
+xref:../admin_guide/quota.adoc#admin-guide-quota[quotas] and xref:../admin_guide/limits.adoc#admin-guide-limits[limit
+ranges] on other projects. This allows you to better constrain how compute
+resources and objects are consumed by users across the cluster.
+
+Defaults can be set for quotas and limit ranges for new projects at creation. To
+request such a change, open a support case on the
+https://access.redhat.com/support/[Red Hat Customer Portal].
+endif::[]
+
+// TODO Need to add a section describing how Dedicated Admins can manage egress network policies.
+
+[[gs-dedicated-admin-whats-next]]
+== What's Next?
+
+Further explore the xref:../admin_guide/index.adoc#admin-guide-index[Cluster Administration] guide
+for more reference information on what's possible with your role and what other
+cluster settings can be configured for you by the {product-title} Operations
+Team.

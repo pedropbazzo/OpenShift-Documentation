@@ -1,0 +1,948 @@
+[[install-config-web-console-customization]]
+= Customizing the Web Console
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+toc::[]
+
+== Overview
+
+Administrators can customize the
+xref:../architecture/infrastructure_components/web_console.adoc#architecture-infrastructure-components-web-console[web
+console] using extensions, which let you run scripts and load custom stylesheets
+when the web console loads. Extension scripts allow you to override the default
+behavior of the web console and customize it for your needs.
+
+For example, extension scripts can be used to add your own
+company's branding or to add company-specific capabilities. A common use case
+for this is rebranding or white-labeling for different environments. You can
+use the same extension code, but provide settings that change the web console.
+
+[CAUTION]
+====
+Take caution making extensive changes to the web console styles or behavior
+that are not documented below. While you add any scripts or stylesheets,
+significant customizations might need to be reworked on upgrades as the web
+console markup and behavior change in future versions.
+====
+
+[[loading-custom-scripts-and-stylesheets]]
+== Loading Extension Scripts and Stylesheets
+
+You can host extension scripts and stylesheets at
+any `https://` URL as long as the URL is accessible from the browser. The files
+might be hosted from a pod on the platform using a publicly accessible route,
+or on another server outside of {product-title}.
+
+To add scripts and stylesheets, edit the `webconsole-config` ConfigMap in the
+`openshift-web-console` namespace. The web console configuration is available
+in the `webconsole-config.yaml` key of the ConfigMap.
+
+----
+$ oc edit configmap/webconsole-config -n openshift-web-console
+----
+
+To add scripts, update the `extensions.scriptURLs` property. The value is an
+array of URLs.
+
+To add stylesheets, update the `extensions.stylesheetURLs` property. The value
+is an array of URLs.
+
+.Example `extensions.stylesheetURLs` Setting
+[source, yaml]
+----
+apiVersion: v1
+kind: ConfigMap
+data:
+  webconsole-config.yaml: |
+    apiVersion: webconsole.config.openshift.io/v1
+    extensions:
+      scriptURLs:
+        - https://example.com/scripts/menu-customization.js
+        - https://example.com/scripts/nav-customization.js
+      stylesheetURLs:
+        - https://example.com/styles/logo.css
+        - https://example.com/styles/custom-styles.css
+    [...]
+----
+
+After saving the ConfigMap, the web console containers will be updated
+automatically for the new extension files within a few minutes.
+
+[NOTE]
+====
+Scripts and stylesheets must be served with the correct content type or they
+will not be run by the browser. Scripts must be served with
+`Content-Type: application/javascript`
+and stylesheets with
+`Content-Type: text/css`.
+====
+
+It is a best practice to wrap extension scripts in an Immediately Invoked
+Function Expression (IIFE). This ensures that you do not create global
+variables that conflict with the names used by the web console or by other
+extensions. For example:
+
+[source, javascript]
+----
+(function() {
+  // Put your extension code here...
+}());
+----
+
+The examples in the following sections show common ways you can customize the
+web console.
+
+[NOTE]
+====
+Additional extension examples are available in the
+link:https://github.com/openshift/origin-web-console/tree/master/extensions/examples[OKD] repository on GitHub.
+====
+
+[[setting-extension-properties]]
+=== Setting Extension Properties
+
+If you have a specific extension, but want to use different text in it for each
+of the environments, you can define the environment in the
+web console configuration, and use the same extension script across environments.
+
+To add extension properties, edit the `webconsole-config` ConfigMap in the
+`openshift-web-console` namespace. The web console configuration is available
+in the `webconsole-config.yaml` key of the ConfigMap.
+
+----
+$ oc edit configmap/webconsole-config -n openshift-web-console
+----
+
+Update the `extensions.properties` value, which is a map of key-value pairs.
+
+[source,yaml]
+----
+apiVersion: v1
+kind: ConfigMap
+data:
+  webconsole-config.yaml: |
+    apiVersion: webconsole.config.openshift.io/v1
+    extensions:
+      [...]
+      properties:
+        doc_url: https://docs.openshift.com
+        key1: value1
+        key2: value2
+    [...]
+----
+
+This results in a global variable that can be accessed by the extension, as if
+the following code was executed:
+
+[source, javascript]
+----
+window.OPENSHIFT_EXTENSION_PROPERTIES = {
+  doc_url: "https://docs.openshift.com",
+  key1: "value1",
+  key2: "value2"
+}
+----
+
+[[extension-option-for-external-logging-solutions]]
+== Extension Option for External Logging Solutions
+
+You can use the extension option to link to external
+logging solutions instead of using {product-title}'s EFK logging stack:
+
+[source, javascript]
+----
+'use strict';
+angular.module("mylinkextensions", ['openshiftConsole'])
+       .run(function(extensionRegistry) {
+          extensionRegistry.add('log-links', _.spread(function(resource, options) {
+            return {
+              type: 'dom',
+              node: '<span><a href="https://extension-point.example.com">' + resource.metadata.name + '</a><span class="action-divider">|</span></span>'
+            };
+          }));
+       });
+hawtioPluginLoader.addModule("mylinkextensions");
+----
+
+Add the script as described in
+xref:loading-custom-scripts-and-stylesheets[Loading Extension Scripts and Stylesheets].
+
+[[customizing-and-disabling-the-guided-tour]]
+==  Customizing and Disabling the Guided Tour
+
+A guided tour will pop up the first time a user logs in on a particular browser.
+You can enable the `auto_launch` for new users:
+
+[source, javascript]
+----
+window.OPENSHIFT_CONSTANTS.GUIDED_TOURS.landing_page_tour.auto_launch = true;
+----
+
+Add the script as described in
+xref:loading-custom-scripts-and-stylesheets[Loading Extension Scripts and Stylesheets].
+
+[[customizing-documentation-links]]
+== Customizing Documentation Links
+
+Documentation links on the landing page are customizable.
+`window.OPENSHIFT_CONSTANTS.CATALOG_HELP_RESOURCES` is an array of objects
+containing a title and an `href`. These will be turned into links. You can
+completely override the array, push or pop additional links, or modify the
+attributes of existing links. For example:
+
+[source, javascript]
+----
+window.OPENSHIFT_CONSTANTS.CATALOG_HELP_RESOURCES.links.push({
+  title: 'Blog',
+  href: 'https://blog.openshift.com'
+});
+----
+
+Add the script as described in
+xref:loading-custom-scripts-and-stylesheets[Loading Extension Scripts and Stylesheets].
+
+[[customizing-the-logo]]
+== Customizing the Logo
+
+The following style changes the logo in the web console header:
+
+[source, css]
+----
+#header-logo {
+  background-image: url("https://www.example.com/images/logo.png");
+  width: 190px;
+  height: 20px;
+}
+----
+
+Replace the *example.com* URL with a URL to an actual image, and adjust the
+width and height. The ideal height is *20px*.
+
+Add the stylesheet as described in
+xref:loading-custom-scripts-and-stylesheets[Loading Extension Scripts and Stylesheets].
+
+[[changing-the-membership-whitelist]]
+== Customizing the Membership Whitelist
+
+The default whitelist in the membership page shows a subset of cluster roles, such as
+`admin`, `basic-user`, `edit`, and so on. It also shows custom roles defined within a project.
+
+For example, to add your own set of custom cluster roles to the whitelist:
+
+[source, javascript]
+----
+window.OPENSHIFT_CONSTANTS.MEMBERSHIP_WHITELIST = [
+  "admin",
+  "basic-user",
+  "edit",
+  "system:deployer",
+  "system:image-builder",
+  "system:image-puller",
+  "system:image-pusher",
+  "view",
+  "custom-role-1",
+  "custom-role-2"
+];
+----
+
+Add the script as described in
+xref:loading-custom-scripts-and-stylesheets[Loading Extension Scripts and Stylesheets].
+
+[[changing-links-to-documentation]]
+== Changing Links to Documentation
+
+Links to external documentation are shown in various sections of the web
+console. The following example changes the URL for two given links to the
+documentation:
+
+[source, javascript]
+----
+window.OPENSHIFT_CONSTANTS.HELP['get_started_cli']      = "https://example.com/doc1.html";
+window.OPENSHIFT_CONSTANTS.HELP['basic_cli_operations'] = "https://example.com/doc2.html";
+----
+
+Alternatively, you can change the base URL for all documentation links.
+
+This example would result in the default help URL `\https://example.com/docs/welcome/index.html`:
+
+[source, javascript]
+----
+window.OPENSHIFT_CONSTANTS.HELP_BASE_URL = "https://example.com/docs/"; <1>
+----
+<1> The path must end in a `/`.
+
+Add the script as described in
+xref:loading-custom-scripts-and-stylesheets[Loading Extension Scripts and Stylesheets].
+
+
+[[adding-or-changing-links-to-download-the-cli]]
+== Adding or Changing Links to Download the CLI
+
+The *About* page in the web console provides download links for the
+xref:../cli_reference/index.adoc#cli-reference-index[command line interface (CLI)] tools. These
+links can be configured by providing both the link text and URL, so that you can
+choose to point them directly to file packages, or to an external page that
+points to the actual packages.
+
+For example, to point directly to packages that can be downloaded, where the
+link text is the package platform:
+
+[source, javascript]
+----
+window.OPENSHIFT_CONSTANTS.CLI = {
+  "Linux (32 bits)": "https://<cdn>/openshift-client-tools-linux-32bit.tar.gz",
+  "Linux (64 bits)": "https://<cdn>/openshift-client-tools-linux-64bit.tar.gz",
+  "Windows":         "https://<cdn>/openshift-client-tools-windows.zip",
+  "Mac OS X":        "https://<cdn>/openshift-client-tools-mac.zip"
+};
+----
+
+Alternatively, to point to a page that links the actual download packages, with
+the *Latest Release* link text:
+
+[source, javascript]
+----
+window.OPENSHIFT_CONSTANTS.CLI = {
+  "Latest Release": "https://<cdn>/openshift-client-tools/latest.html"
+};
+----
+
+Add the script as described in
+xref:loading-custom-scripts-and-stylesheets[Loading Extension Scripts and Stylesheets].
+
+
+[[customizing-the-about-page]]
+=== Customizing the About Page
+
+To provide a custom *About* page for the web console:
+
+. Write an extension that looks like:
++
+[source, javascript]
+----
+angular
+  .module('aboutPageExtension', ['openshiftConsole'])
+  .config(function($routeProvider) {
+    $routeProvider
+      .when('/about', {
+        templateUrl: 'https://example.com/extensions/about/about.html',
+        controller: 'AboutController'
+      });
+    }
+  );
+
+hawtioPluginLoader.addModule('aboutPageExtension');
+----
+
+. Write a customized template.
++
+Start from the version of
+https://github.com/openshift/origin-web-console/blob/master/app/views/about.html[*_about.html_*]
+from the OpenShift Container Platform
+link:https://github.com/openshift/origin-web-console/branches[release] you are
+using. Within the template, there are two angular scope variables available:
+`version.master.openshift` and `version.master.kubernetes`.
+
+. Host the template at a URL with the correct Cross-Origin Resource Sharing
+(CORS) response headers for the web console.
+
+.. Set `Access-Control-Allow-Origin` response to allow requests from the web console domain.
+.. Set `Access-Control-Allow-Methods` to include `GET`.
+.. Set `Access-Control-Allow-Headers` to include `Content-Type`.
+
+Alternatively, you can include the template directly in your JavaScript using AngularJS
+link:https://docs.angularjs.org/api/ng/service/$templateCache[*_$templateCache_*].
+
+Add the script as described in
+xref:loading-custom-scripts-and-stylesheets[Loading Extension Scripts and Stylesheets].
+
+[[configuring-navigation-menus]]
+== Configuring Navigation Menus
+
+[[top-navigation-dropdown-menus]]
+=== Top Navigation Dropdown Menus
+
+The top navigation bar of the web console contains the help icon and the user
+dropdown menus. You can add additional menu items to these using the
+link:https://github.com/openshift/angular-extension-registry[angular-extension-registry].
+
+The available extension points are:
+
+* `nav-help-dropdown` - the help icon dropdown menu, visible at desktop screen widths
+* `nav-user-dropdown` - the user dropdown menu, visible at desktop screen widths
+* `nav-dropdown-mobile` - the single menu for top navigation items at mobile screen widths
+
+The following example extends the `nav-help-dropdown` menu, with a name of
+`<myExtensionModule>`:
+
+[NOTE]
+====
+`<myExtensionModule>` is a placeholder name. Each dropdown menu extension must
+be unique enough so that it does not clash with any future angular modules.
+====
+
+[source, javascript]
+----
+angular
+  .module('<myExtensionModule>', ['openshiftConsole'])
+  .run([
+    'extensionRegistry',
+    function(extensionRegistry) {
+      extensionRegistry
+        .add('nav-help-dropdown', function() {
+          return [
+            {
+              type: 'dom',
+              node: '<li><a href="http://www.example.com/report" target="_blank">Report a Bug</a></li>'
+            }, {
+              type: 'dom',
+              node: '<li class="divider"></li>'  // If you want a horizontal divider to appear in the menu
+            }, {
+              type: 'dom',
+              node: '<li><a href="http://www.example.com/status" target="_blank">System Status</a></li>'
+            }
+          ];
+        });
+    }
+  ]);
+
+hawtioPluginLoader.addModule('<myExtensionModule>');
+----
+
+Add the script as described in
+xref:loading-custom-scripts-and-stylesheets[Loading Extension Scripts and Stylesheets].
+
+[[web-console-application-launcher]]
+=== Application Launcher
+
+The top navigation bar also contains an optional application launcher for
+linking to other web applications. This dropdown menu is empty by default, but
+when links are added, appears to the left of the help menu in the masthead.
+
+[source, javascript]
+----
+// Add items to the application launcher dropdown menu.
+window.OPENSHIFT_CONSTANTS.APP_LAUNCHER_NAVIGATION = [{
+  title: "Dashboard",                    // The text label
+  iconClass: "fa fa-dashboard",          // The icon you want to appear
+  href: "http://example.com/dashboard",  // Where to go when this item is clicked
+  tooltip: 'View dashboard'              // Optional tooltip to display on hover
+}, {
+  title: "Manage Account",
+  iconClass: "pficon pficon-user",
+  href: "http://example.com/account",
+  tooltip: "Update email address or password."
+}];
+----
+
+Add the script as described in
+xref:loading-custom-scripts-and-stylesheets[Loading Extension Scripts and Stylesheets].
+
+[[system-status-badge]]
+=== System Status Badge
+
+The top navigation bar can also include an optional system status badge in order
+to notify users of system-wide events such as maintenance windows. To make use
+of the existing styles using a yellow warning icon for the badge, follow the
+example below.
+
+[source, javascript]
+----
+'use strict';
+
+angular
+  .module('mysystemstatusbadgeextension', ['openshiftConsole'])
+  .run([
+    'extensionRegistry',
+    function(extensionRegistry) {
+      // Replace http://status.example.com/ with your domain
+      var system_status_elem = $('<a href="http://status.example.com/"' +
+      'target="_blank" class="nav-item-iconic system-status"><span title="' +
+      'System Status" class="fa status-icon pficon-warning-triangle-o">' +
+      '</span></a>');
+
+      // Add the extension point to the registry so the badge appears
+      // To disable the badge, comment this block out
+      extensionRegistry
+        .add('nav-system-status', function() {
+          return [{
+            type: 'dom',
+            node: system_status_elem
+          }];
+        });
+    }
+  ]);
+
+hawtioPluginLoader.addModule('mysystemstatusbadgeextension');
+----
+
+Add the script as described in
+xref:loading-custom-scripts-and-stylesheets[Loading Extension Scripts and Stylesheets].
+
+[[web-console-project-left-navigation]]
+=== Project Left Navigation
+
+When navigating within a project, a menu appears on the left with primary and
+secondary navigation. This menu structure is defined as a constant and can be
+overridden or modified.
+
+[NOTE]
+====
+Significant customizations to the project navigation may affect the user
+experience and should be done with careful consideration. You may need to update
+this customization in future upgrades if you modify existing navigation items.
+====
+
+[source, javascript]
+----
+// Append a new primary nav item.  This is a simple direct navigation item
+// with no secondary menu.
+window.OPENSHIFT_CONSTANTS.PROJECT_NAVIGATION.push({
+  label: "Dashboard",           // The text label
+  iconClass: "fa fa-dashboard", // The icon you want to appear
+  href: "/dashboard"            // Where to go when this nav item is clicked.
+                                // Relative URLs are pre-pended with the path
+                                // '/project/<project-name>'
+});
+
+// Splice a primary nav item to a specific spot in the list.  This primary item has
+// a secondary menu.
+window.OPENSHIFT_CONSTANTS.PROJECT_NAVIGATION.splice(2, 0, { // Insert at the third spot
+  label: "Git",
+  iconClass: "fa fa-code",
+  secondaryNavSections: [       // Instead of an href, a sub-menu can be defined
+    {
+      items: [
+        {
+          label: "Branches",
+          href: "/git/branches",
+          prefixes: [
+            "/git/branches/"     // Defines prefix URL patterns that will cause
+                                 // this nav item to show the active state, so
+                                 // tertiary or lower pages show the right context
+          ]
+        }
+      ]
+    },
+    {
+      header: "Collaboration",   // Sections within a sub-menu can have an optional header
+      items: [
+        {
+          label: "Pull Requests",
+          href: "/git/pull-requests",
+          prefixes: [
+            "/git/pull-requests/"
+          ]
+        }
+      ]
+    }
+  ]
+});
+
+// Add a primary item to the top of the list.  This primary item is shown conditionally.
+window.OPENSHIFT_CONSTANTS.PROJECT_NAVIGATION.unshift({
+  label: "Getting Started",
+  iconClass: "pficon pficon-screen",
+  href: "/getting-started",
+  prefixes: [                   // Primary nav items can also specify prefixes to trigger
+    "/getting-started/"         // active state
+  ],
+  isValid: function() {         // Primary or secondary items can define an isValid
+    return isNewUser;           // function. If present it will be called to test whether
+                                // the item should be shown, it should return a boolean
+  }
+});
+
+// Modify an existing menu item
+var applicationsMenu = _.find(window.OPENSHIFT_CONSTANTS.PROJECT_NAVIGATION, { label: 'Applications' });
+applicationsMenu.secondaryNavSections.push({ // Add a new secondary nav section to the Applications menu
+  // my secondary nav section
+});
+----
+
+Add the script as described in
+xref:loading-custom-scripts-and-stylesheets[Loading Extension Scripts and Stylesheets].
+
+[[configuring-featured-applications]]
+== Configuring Featured Applications
+
+The web console has an optional list of featured application links in its
+landing page catalog. These appear near the top of the page and can have an
+icon, a title, a short description, and a link.
+
+image::featured_applications.png["Featured Applications"]
+
+[source, javascript]
+----
+// Add featured applications to the top of the catalog.
+window.OPENSHIFT_CONSTANTS.SAAS_OFFERINGS = [{
+  title: "Dashboard",                         // The text label
+  icon: "fa fa-dashboard",                    // The icon you want to appear
+  url: "http://example.com/dashboard",        // Where to go when this item is clicked
+  description: "Open application dashboard."  // Short description
+}, {
+  title: "System Status",
+  icon: "fa fa-heartbeat",
+  url: "http://example.com/status",
+  description: "View system alerts and outages."
+}, {
+  title: "Manage Account",
+  icon: "pficon pficon-user",
+  url: "http://example.com/account",
+  description: "Update email address or password."
+}];
+----
+
+Add the script as described in
+xref:loading-custom-scripts-and-stylesheets[Loading Extension Scripts and Stylesheets].
+
+[[configuring-catalog-categories]]
+== Configuring Catalog Categories
+
+Catalog categories organize the display of items in the web console catalog
+landing page. Each category has one or more subcategories. A builder image,
+template, or service is grouped in a subcategory if it includes a tag listed in
+the matching subcategory tags, and an item can appear in more than one subcategory.
+Categories and subcategories only display if they contain at least one item.
+
+[NOTE]
+====
+Significant customizations to the catalog categories may affect the user
+experience and should be done with careful consideration. You may need to update
+this customization in future upgrades if you modify existing category items.
+====
+
+[source, javascript]
+----
+// Find the Languages category.
+var category = _.find(window.OPENSHIFT_CONSTANTS.SERVICE_CATALOG_CATEGORIES,
+                      { id: 'languages' });
+// Add Go as a new subcategory under Languages.
+category.subCategories.splice(2,0,{ // Insert at the third spot.
+  // Required. Must be unique.
+  id: "go",
+  // Required.
+  label: "Go",
+  // Optional. If specified, defines a unique icon for this item.
+  icon: "icon-go-gopher",
+  // Required. Items matching any tag will appear in this subcategory.
+  tags: [
+    "go",
+    "golang"
+  ]
+});
+
+// Add a Featured category as the first category tab.
+window.OPENSHIFT_CONSTANTS.SERVICE_CATALOG_CATEGORIES.unshift({
+  // Required. Must be unique.
+  id: "featured",
+  // Required
+  label: "Featured",
+  subCategories: [
+    {
+      // Required. Must be unique.
+      id: "go",
+      // Required.
+      label: "Go",
+      // Optional. If specified, defines a unique icon for this item.
+      icon: "icon-go-gopher",
+      // Required. Items matching any tag will appear in this subcategory.
+      tags: [
+        "go",
+        "golang"
+      ]
+    },
+    {
+      // Required. Must be unique.
+      id: "jenkins",
+      // Required.
+      label: "Jenkins",
+      // Optional. If specified, defines a unique icon for this item.
+      icon: "icon-jenkins",
+      // Required. Items matching any tag will appear in this subcategory.
+      tags: [
+        "jenkins"
+      ]
+    }
+  ]
+});
+----
+
+Add the script as described in
+xref:loading-custom-scripts-and-stylesheets[Loading Extension Scripts and Stylesheets].
+
+[[configuring-quota-notification-messages]]
+== Configuring Quota Notification Messages
+
+Whenever a user reaches a quota, a quota notification is put into the notification drawer.
+A custom quota notification message, per
+xref:../dev_guide/compute_resources.adoc#dev-managed-by-quota[quota resource type], can be added to the notification. For example:
+
+[source, html]
+----
+Your project is over quota. It is using 200% of 2 cores CPU (Limit). Upgrade
+to <a href='https://www.openshift.com'>OpenShift Online Pro</a> if you need
+additional resources.
+----
+
+The "Upgrade to..." part of the notification is the custom message and may
+contain HTML such as links to additional resources.
+
+[NOTE]
+====
+Since the quota message is HTML markup, any special characters need to be
+properly escaped for HTML.
+====
+
+Set the `window.OPENSHIFT_CONSTANTS.QUOTA_NOTIFICATION_MESSAGE` property in an
+extension script to customize the message for each resource.
+
+[source, javascript]
+----
+// Set custom notification messages per quota type/key
+window.OPENSHIFT_CONSTANTS.QUOTA_NOTIFICATION_MESSAGE = {
+  'pods': 'Upgrade to <a href="https://www.openshift.com">OpenShift Online Pro</a> if you need additional resources.',
+  'limits.memory': 'Upgrade to <a href="https://www.openshift.com">OpenShift Online Pro</a> if you need additional resources.'
+};
+----
+
+Add the script as described in
+xref:loading-custom-scripts-and-stylesheets[Loading Extension Scripts and Stylesheets].
+
+[[configuring-the-create-from-url-namespace-whitelist]]
+== Configuring the Create From URL Namespace Whitelist
+
+xref:../dev_guide/create_from_url.adoc#dev-guide-create-from-url[Create from URL]
+only works with image streams or templates from namespaces that have been
+explicitly specified in `OPENSHIFT_CONSTANTS.CREATE_FROM_URL_WHITELIST`.  To add
+namespaces to the whitelist, follow these steps:
+
+[NOTE]
+====
+`openshift` is included in the whitelist by default. Do not remove it.
+====
+
+[source, javascript]
+----
+// Add a namespace containing the image streams and/or templates
+window.OPENSHIFT_CONSTANTS.CREATE_FROM_URL_WHITELIST.push(
+  'shared-stuff'
+);
+----
+
+Add the script as described in
+xref:loading-custom-scripts-and-stylesheets[Loading Extension Scripts and Stylesheets].
+
+[[disabling-copy-login-command]]
+== Disabling the Copy Login Command
+
+The web console allows users to copy a login command, including the current
+access token, to the clipboard from the user menu and the Command Line Tools
+page. This function can be changed so that the user's access token is not
+included in the copied command.
+
+[source, javascript]
+----
+// Do not copy the user's access token in the copy login command.
+window.OPENSHIFT_CONSTANTS.DISABLE_COPY_LOGIN_COMMAND = true;
+----
+
+Add the script as described in
+xref:loading-custom-scripts-and-stylesheets[Loading Extension Scripts and Stylesheets].
+
+[[web-console-enable-wildcard-routes]]
+== Enabling Wildcard Routes
+
+If you enabled wildcard routes for a router, you can also enable wildcard
+routes in the web console. This lets users enter hostnames starting with an
+asterisk like `*.example.com` when creating a route. To enable wildcard routes:
+
+[source, jsvascript]
+----
+window.OPENSHIFT_CONSTANTS.DISABLE_WILDCARD_ROUTES = false;
+----
+
+Add the script as described in
+xref:loading-custom-scripts-and-stylesheets[Loading Extension Scripts and Stylesheets].
+
+xref:../install_config/router/default_haproxy_router.adoc#using-wildcard-routes[Learn
+how to configure HAProxy routers to allow wildcard routes].
+
+[[customizing-the-login-page]]
+== Customizing the Login Page
+
+You can also change the login page, and the login provider selection page for
+the web console. Run the following commands to create templates you can modify:
+
+----
+$ oc adm create-login-template > login-template.html
+$ oc adm create-provider-selection-template > provider-selection-template.html
+----
+
+Edit the file to change the styles or add content, but be careful not to remove
+any required parameters inside the curly brackets.
+
+To use your custom login page or provider selection page, set the following
+options in the master configuration file:
+
+[source, yaml]
+----
+oauthConfig:
+  ...
+  templates:
+    login: /path/to/login-template.html
+    providerSelection: /path/to/provider-selection-template.html
+----
+
+Relative paths are resolved relative to the master configuration file. You must
+restart the server after changing this configuration.
+
+When there are multiple login providers configured or when the
+xref:../install_config/configuring_authentication.adoc#identity-providers_parameters[`alwaysShowProviderSelection`]
+option in the *_master-config.yaml_* file is set to *true*, each time a user's
+token to {product-title} expires, the user is presented with this custom page
+before they can proceed with other tasks.
+
+[[custom-login-page-example-usage]]
+=== Example Usage
+
+Custom login pages can be used to create Terms of Service information. They can
+also be helpful if you use a third-party login provider, like GitHub or Google,
+to show users a branded page that they trust and expect before being redirected
+to the authentication provider.
+
+[[customizing-the-oauth-error-page]]
+== Customizing the OAuth Error Page
+
+When errors occur during authentication, you can change the page shown.
+
+.  Run the following command to create a template you can modify:
++
+----
+$ oc adm create-error-template > error-template.html
+----
+
+.  Edit the file to change the styles or add content.
++
+You can use the `Error` and `ErrorCode` variables in the template. To use
+your custom error page, set the following option in the master configuration
+file:
++
+[source, yaml]
+----
+oauthConfig:
+  ...
+  templates:
+    error: /path/to/error-template.html
+----
++
+Relative paths are resolved relative to the master configuration file.
+
+.  You must restart the server after changing this configuration.
+
+[[changing-the-logout-url]]
+== Changing the Logout URL
+
+You can change the location a console user is sent to when logging out of
+the console by modifying the `clusterInfo.logoutPublicURL` parameter in the
+`webconsole-config` ConfigMap.
+
+----
+$ oc edit configmap/webconsole-config -n openshift-web-console
+----
+
+Here is an example that changes the logout URL to `https://www.example.com/logout`:
+
+[source, yaml]
+----
+apiVersion: v1
+kind: ConfigMap
+data:
+  webconsole-config.yaml: |
+    apiVersion: webconsole.config.openshift.io/v1
+    clusterInfo:
+      [...]
+      logoutPublicURL: "https://www.example.com/logout"
+    [...]
+----
+
+This can be useful when authenticating with
+xref:../install_config/configuring_authentication.adoc#RequestHeaderIdentityProvider[Request
+Header] and OAuth or
+xref:../install_config/configuring_authentication.adoc#OpenID[OpenID] identity
+providers, which require visiting an external URL to destroy single sign-on
+sessions.
+
+[[ansible-config-web-console-customizations]]
+== Configuring Web Console Customizations with Ansible
+
+During cluster installations,  many modifications to the web console can be
+configured using the following parameters, which are configurable in the
+xref:../install/index.adoc#install-planning[inventory file]:
+
+- xref:changing-the-logout-url[`openshift_master_logout_url`]
+- xref:loading-custom-scripts-and-stylesheets[`openshift_web_console_extension_script_urls`]
+- xref:loading-custom-scripts-and-stylesheets[`openshift_web_console_extension_stylesheet_urls`]
+- xref:customizing-the-login-page[`openshift_master_oauth_templates`]
+- xref:../install_config/cluster_metrics.adoc#install-config-cluster-metrics[`openshift_master_metrics_public_url`]
+- xref:../install_config/aggregate_logging.adoc#install-config-aggregate-logging[`openshift_master_logging_public_url`]
+
+.Example Web Console Customization with Ansible
+[source, bash]
+----
+# Configure `clusterInfo.logoutPublicURL` in the web console configuration
+# See: https://docs.openshift.com/enterprise/latest/install_config/web_console_customization.html#changing-the-logout-url
+#openshift_master_logout_url=https://example.com/logout
+
+# Configure extension scripts for web console customization
+# See: https://docs.openshift.com/enterprise/latest/install_config/web_console_customization.html#loading-custom-scripts-and-stylesheets
+#openshift_web_console_extension_script_urls=['https://example.com/scripts/menu-customization.js','https://example.com/scripts/nav-customization.js']
+
+# Configure extension stylesheets for web console customization
+# See: https://docs.openshift.com/enterprise/latest/install_config/web_console_customization.html#loading-custom-scripts-and-stylesheets
+#openshift_web_console_extension_stylesheet_urls=['https://example.com/styles/logo.css','https://example.com/styles/custom-styles.css']
+
+# Configure a custom login template in the master config
+# See: https://docs.openshift.com/enterprise/latest/install_config/web_console_customization.html#customizing-the-login-page
+#openshift_master_oauth_templates={'login': '/path/to/login-template.html'}
+
+# Configure `clusterInfo.metricsPublicURL` in the web console configuration for cluster metrics. Ansible is also able to configure metrics for you.
+# See: https://docs.openshift.com/enterprise/latest/install_config/cluster_metrics.html
+#openshift_master_metrics_public_url=https://hawkular-metrics.example.com/hawkular/metrics
+
+# Configure `clusterInfo.loggingPublicURL` in the web console configuration for aggregate logging. Ansible is also able to install logging for you.
+# See: https://docs.openshift.com/enterprise/latest/install_config/aggregate_logging.html
+#openshift_master_logging_public_url=https://kibana.example.com
+----
+
+[[changing-the-web-console-url-port-and-certificates]]
+== Changing the Web Console URL Port and Certificates
+
+To ensure your custom certificate is served when users access the web console
+URL, add the certificate and URL to the `namedCertificates` section of the
+*_master-config.yaml_* file. See
+xref:../install_config/certificate_customization.adoc#configuring-custom-certificates[Configuring
+Custom Certificates for the Web Console or CLI] for more information.
+
+To set or modify the redirect URL for the web console, modify the
+`openshift-web-console oauthclient`:
+
+----
+$ oc edit oauthclient openshift-web-console
+----
+
+To ensure users are correctly redirected, update the `PublicUrls` for the
+`openshift-web-console configmap`:
+
+----
+$ oc edit configmap/webconsole-config -n openshift-web-console
+----
+
+Then, update the value for `consolePublicURL`.

@@ -1,0 +1,317 @@
+[[upgrading-blue-green-deployments]]
+= Performing blue-green cluster upgrades
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+toc::[]
+
+[NOTE]
+====
+This topic serves as an alternative approach for node host upgrades to the in-place
+upgrade method.
+====
+
+The _blue-green deployment_ upgrade method follows a similar flow to the
+in-place method: masters and etcd servers are still upgraded first, however a
+parallel environment is created for new node hosts instead of upgrading them
+in-place.
+
+This method allows administrators to switch traffic from the old set of node
+hosts (e.g., the _blue_ deployment) to the new set (e.g., the _green_
+deployment) after the new deployment has been verified. If a problem is
+detected, it is also then easy to rollback to the old deployment quickly.
+
+While blue-green is a proven and valid strategy for deploying just about any
+software, there are always trade-offs. Not all environments have the same uptime
+requirements or the resources to properly perform blue-green deployments.
+
+In an {product-title} environment, the most suitable candidate for blue-green
+deployments are the node hosts. All user processes run on these systems and even
+critical pieces of {product-title} infrastructure are self-hosted on these
+resources. Uptime is most important for these workloads and the additional
+complexity of blue-green deployments can be justified.
+
+The exact implementation of this approach varies based on your requirements.
+Often the main challenge is having the excess capacity to facilitate such an
+approach.
+
+.Blue-green deployment
+image::blue-green-deployment.gif[Blue-Green Deployment Upgrade]
+
+[[blue-green-deployments-preparing-for-upgrade]]
+== Preparing for a blue-green upgrade
+
+After you have upgraded your master and etcd hosts using method described for
+xref:automated_upgrades.adoc#install-config-upgrading-automated-upgrades[In-place Upgrades],
+use the following sections to prepare your environment for a blue-green upgrade
+of the remaining node hosts.
+
+ifdef::openshift-enterprise[]
+[[blue-green-sharing-software-entitltments]]
+=== Sharing software entitlements
+
+Administrators must temporarily share the Red Hat software entitlements between
+the blue-green deployments or provide access to the installation content by
+means of a system such as Red Hat Satellite. This can be accomplished by sharing
+the consumer ID from the previous node host:
+
+. On each old node host that will be upgraded, note its `system identity` value,
+which is the consumer ID:
++
+----
+# subscription-manager identity | grep system
+system identity: 6699375b-06db-48c4-941e-689efd6ce3aa
+----
+
+. On each new RHEL 7 or RHEL Atomic Host 7 system that will replace an old
+node host, register using the respective consumer ID from the previous step:
++
+----
+# subscription-manager register --consumerid=6699375b-06db-48c4-941e-689efd6ce3aa
+----
+
+endif::openshift-enterprise[]
+
+[[blue-green-labeling-node-hosts]]
+=== Labeling blue nodes
+
+You must ensure that your current node hosts in production are labeled either
+`blue` or `green`. In this example, the current production environment is
+`blue`, and the new environment is `green`.
+
+. Get the current list of node names known to the cluster:
++
+----
+$ oc get nodes
+----
+
+. Label all non-master node hosts (compute nodes) and dedicated infrastructure
+nodes in your current production environment with `color=blue`:
++
+----
+$ oc label node --selector=node-role.kubernetes.io/compute=true color=blue
+
+$ oc label node --selector=node-role.kubernetes.io/infra=true color=blue
+----
++
+In the previous command, the `--selector` flag is used to match a subset of the
+cluster using the relevant node labels, and all matches are labeled with
+`color=blue`.
+
+[[blue-green-creating-labeling-green-nodes]]
+=== Creating and labeling green nodes
+
+Create the green environment by adding an equal number of new node hosts to the
+existing cluster:
+
+. Add the new node hosts using the procedure as described in
+xref:../install_config/adding_hosts_to_existing_cluster.adoc#adding-cluster-hosts_adding-hosts-to-cluster[Adding Hosts to an Existing Cluster].
+When updating your inventory file with the `[new_nodes]` group in that
+procedure, ensure these variables are set:
++
+* In order to delay workload scheduling until the nodes are deemed
+xref:../architecture/infrastructure_components/kubernetes_infrastructure.adoc#node[healthy],
+which you verify in later steps, set the `openshift_schedulable=false`
+variable for each new node host to ensure they are unschedulable initially.
+
+. After the new nodes deploy, apply the `color=green` label to each
+new node:
++
+----
+$ oc label node <node_name> color=green
+----
+
+[[blue-green-verifying-green-nodes]]
+=== Verifying green nodes
+
+Verify that your new green nodes are in a healthy state:
+
+. Verify that new nodes are detected in the cluster and are in *Ready,SchedulingDisabled* state:
++
+----
+$ oc get nodes
+
+NAME                STATUS                       ROLES       AGE
+node4.example.com   Ready,SchedulingDisabled     compute     1d
+----
+
+. Verify that the green nodes have proper labels:
++
+----
+$ oc get nodes --show-labels
+
+NAME                STATUS                       ROLES       AGE   LABELS
+node4.example.com   Ready,SchedulingDisabled     compute     1d    beta.kubernetes.io/arch=amd64,beta.kubernetes.io/os=linux,color=green,kubernetes.io/hostname=m01.example.com,node-role.kubernetes.io/compute=true
+----
+
+. Perform a diagnostic check for the cluster:
++
+----
+$ oc adm diagnostics
+
+[Note] Determining if client configuration exists for client/cluster diagnostics
+Info:  Successfully read a client config file at '/root/.kube/config'
+Info:  Using context for cluster-admin access: 'default/m01-example-com:8443/system:admin'
+[Note] Performing systemd discovery
+
+[Note] Running diagnostic: ConfigContexts[default/m01-example-com:8443/system:admin]
+       Description: Validate client config context is complete and has connectivity
+...
+         [Note] Running diagnostic: CheckExternalNetwork
+              Description: Check that external network is accessible within a pod
+
+       [Note] Running diagnostic: CheckNodeNetwork
+              Description: Check that pods in the cluster can access its own node.
+
+       [Note] Running diagnostic: CheckPodNetwork
+              Description: Check pod to pod communication in the cluster. In case of ovs-subnet network plugin, all pods
+should be able to communicate with each other and in case of multitenant network plugin, pods in non-global projects
+should be isolated and pods in global projects should be able to access any pod in the cluster and vice versa.
+
+       [Note] Running diagnostic: CheckServiceNetwork
+              Description: Check pod to service communication in the cluster. In case of ovs-subnet network plugin, all
+pods should be able to communicate with all services and in case of multitenant network plugin, services in non-global
+projects should be isolated and pods in global projects should be able to access any service in the cluster.
+...
+----
+
+[[blue-green-warming-green-nodes]]
+== Preparing the green nodes
+
+To migrate pods from the blue environment to the green, you must pull the
+required container images.
+
+Network latency and load on the registry can cause delays if the environment
+does not have sufficient capacity. You can minimize impact to the running system
+by importing new image streams to trigger new pod deployments to the new nodes.
+
+Major releases of {product-title}, and sometimes asynchronous errata updates,
+introduce new image streams for builder images for users of Source-to-Image
+(S2I). Upon import, any builds or deployments configured with
+xref:../dev_guide/builds/triggering_builds.adoc#image-change-triggers[image
+change triggers] are automatically created.
+
+Another benefit of triggering the builds is that it fetches the majority of the
+ancillary images to all node hosts, such as the various builder images, the pod
+infrastructure image, and deployers. The green nodes are then prepared for the
+expected load increase, and the remaining images more quickly migrated during
+node evacuation.
+
+When you are ready to continue with the upgrade process, follow these steps to
+warm the green nodes:
+
+. Set the green nodes to schedulable so that new pods are deployed to them:
++
+----
+$ oc adm manage-node --schedulable=true --selector=color=green
+----
+
+. Set the blue nodes to unschedulable so that no new pods run on them:
++
+----
+$ oc adm manage-node --schedulable=false --selector=color=blue
+----
+
+. Update the node selectors for the registry and router deployment configurations
+to use the `node-role.kubernetes.io/infra=true` label. This change starts new
+deployments that place the registry and router pods on your new infrastructure
+nodes.
+
+.. Edit the *docker-registry* deployment configuration:
++
+----
+$ oc edit -n default dc/docker-registry
+----
+
+.. Update the `nodeSelector` parameter to use the following value, with `"true"`
+in quotation marks, and save your changes:
++
+----
+      nodeSelector:
+        node-role.kubernetes.io/infra: "true"
+----
+
+.. Edit the *router* deployment configuration:
++
+----
+$ oc edit -n default dc/router
+----
+
+.. Update the `nodeSelector` parameter to use the following value, with `"true"`
+in quotation marks, and save your changes:
++
+----
+      nodeSelector:
+        node-role.kubernetes.io/infra: "true"
+----
+
+.. Verify that the *docker-registry* and *router* pods are running and in ready
+state on the new infrastructure nodes:
++
+----
+$ oc get pods -n default -o wide
+
+NAME                       READY     STATUS    RESTARTS   AGE       IP                NODE
+docker-registry-2-b7xbn    1/1       Running   0          18m       10.128.0.188      infra-node3.example.com
+router-2-mvq6p             1/1       Running   0          6m        192.168.122.184   infra-node4.example.com
+----
+
+. Update the default image streams and templates.
+
+. Import the latest images. This process can trigger a large number of builds,
+but the builds are performed on the green nodes and, therefore, do not impact
+any traffic on the blue deployment.
+
+. To monitor build progress across all namespaces (projects) in the cluster:
++
+----
+$ oc get events -w --all-namespaces
+----
++
+In large environments, builds rarely completely stop. However, you should see a
+large increase and decrease caused by the administrative image import.
+
+[[blue-green-deployments-node-evacuation]]
+== Evacuating and decommissioning blue nodes
+
+For larger deployments, it is possible to have other labels that help determine
+how evacuation can be coordinated. The most conservative approach for avoiding
+downtime is to evacuate one node host at a time.
+
+If services are composed of pods using zone anti-affinity, you can evacuate
+an entire zone at one time. You must ensure that the storage volumes used are
+available in the new zone. Follow the directions in your cloud provider's 
+documentation.
+
+A node host evacuation is triggered whenever the node service is stopped. Node
+labeling is very important and can cause issues if nodes are mislabeled or
+commands are run on nodes with generalized labels. Exercise caution if master
+hosts are also labeled with `color=blue`.
+
+When you are ready to continue with the upgrade process, follow these steps.
+
+. Evacuate and delete all blue nodes with the following commands:
++
+----
+$ oc adm manage-node --selector=color=blue --evacuate
+$ oc delete node --selector=color=blue
+----
+
+. After the blue node hosts no longer contain pods and have been removed from
+{product-title}, they are safe to power off. As a safety precaution, confirm
+that there are no issues with the upgrade before you power off the hosts.
+ifdef::openshift-enterprise[]
+.. Unregister each old host:
++
+----
+# subscription-manager clean
+----
+endif::openshift-enterprise[]
+.. Back up any useful scripts or required files that are stored on the hosts.
+.. After you are comfortable that the upgrade succeeded, remove these hosts.

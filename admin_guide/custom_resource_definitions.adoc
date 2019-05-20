@@ -1,0 +1,22 @@
+[[admin-guide-custom-resources]]
+= Extending the Kubernetes API with custom resources
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:context: admin-guide-custom-resources
+
+toc::[]
+
+include::modules/con_custom-resource-definition.adoc[leveloffset=+1]
+
+include::modules/proc_creating-crd.adoc[leveloffset=+1]
+
+include::modules/proc_creating-aggregated-cluster-role.adoc[leveloffset=+1]
+
+include::modules/proc_creating-crd-object.adoc[leveloffset=+1]
+
+include::modules/proc_manage-crd-object.adoc[leveloffset=+1]

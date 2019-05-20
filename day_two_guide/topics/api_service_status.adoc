@@ -1,0 +1,29 @@
+////
+API Service Status
+
+Module included in the following assemblies:
+
+* day_two_guide/environment_health_checks.adoc
+////
+
+The OpenShift API service runs on all
+master instances. To see the status of the service,
+view the master-api pods in the *kube-system* project:
+
+----
+oc get pod -n kube-system -l openshift.io/component=api
+
+NAME                             READY     STATUS    RESTARTS   AGE
+master-api-myserver.com          1/1       Running   0          56d
+----
+
+The API service exposes a health check, which can be queried externally using the API host name:
+
+----
+oc get pod -n kube-system -o wide
+NAME                                               READY     STATUS    RESTARTS   AGE       IP            NODE
+master-api-myserver.com                            1/1       Running   0          7h        10.240.0.16   myserver.com/healthz
+
+$ curl -k https://myserver.com/healthz
+ok
+----

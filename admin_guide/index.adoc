@@ -1,0 +1,126 @@
+[[admin-guide-index]]
+= Overview
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+
+toc::[]
+{nbsp} +
+These Cluster Administration topics cover the day-to-day tasks for managing
+your {product-title} cluster and other advanced configuration topics.
+
+ifdef::openshift-dedicated,openshift-aro[]
+[[admin-guide-index-dedicated-admin-role]]
+== Dedicated Administrator Role
+As a dedicated administrator of an {product-title} cluster, your account has increased
+permissions and access to all user-created projects. If you are new to the role,
+check out the Getting Started topic on
+xref:../getting_started/dedicated_administrators.adoc#getting-started-dedicated-administrators[Administering an
+{product-title} Cluster] for a quick overview.
+
+[NOTE]
+====
+Some configuration changes or procedures discussed in this guide may be
+performed only by the {product-title} Operations Team. They are included in this
+guide for informational purposes to help you as an {product-title} cluster
+administrator better understand what configuration options are possible. If you
+would like to request a change to your cluster that you cannot perform using the
+administrator CLI, open a support case on the
+https://access.redhat.com/support/[Red Hat Customer Portal].
+====
+
+When your account has the *dedicated-cluster-admin* authorization role
+xref:../architecture/additional_concepts/authorization.adoc#architecture-additional-concepts-authorization[bound] to it, you
+are automatically bound to the *dedicated-project-admin* for any new projects
+that are created by users in the cluster.
+
+You can perform actions associated with a set of
+xref:../architecture/additional_concepts/authorization.adoc#evaluating-authorization[verbs]
+(e.g., `create`) to operate on a set of
+xref:../architecture/additional_concepts/authorization.adoc#evaluating-authorization[resource
+names] (e.g., `templates`). To view the details of these roles and their sets of
+verbs and resources, run the following:
+
+----
+$ oc describe clusterrole/dedicated-cluster-admin
+$ oc describe clusterrole/dedicated-project-admin
+----
+
+The verb names do not necessarily all map directly to `oc` commands, but rather
+equate more generally to the types of CLI operations you can perform. For
+example, having the *list* verb means that you can display a list of all objects
+of a given resource name (e.g., using `oc get`), while *get* means that you can
+display the details of a specific object if you know its name (e.g., using `oc
+describe`).
+
+{product-title} administrators can grant users a *dedicated-reader* role, which
+provides view-only access at the cluster level, as well as view access for all
+user projects.
+
+[[admin-guide-index-project-level-permissions]]
+== Project-level Permissions
+
+At the project level, an administrator of an {product-title} cluster can perform
+all actions that a project administrator can perform. In addition, the
+{product-title} administrator can set
+xref:../admin_guide/quota.adoc#admin-guide-quota[resource quotas] and
+xref:../admin_guide/limits.adoc#admin-guide-limits[limit ranges] for the
+project.
+endif::[]
+
+ifdef::openshift-dedicated[]
+[[admin-guide-index-cluster-level-permissions]]
+== Cluster-level Permissions
+
+[cols="2,4",options="header"]
+|===
+
+|Ability |Description
+
+|Manage Users and Groups
+a|* Create, update, and delete
+xref:../architecture/additional_concepts/authentication.adoc#users-and-groups[users
+and groups] within the cluster.
+* Add or remove users to and from groups.
+
+|Manage Roles and Bindings
+|xref:../admin_guide/manage_rbac.adoc#managing-role-bindings[Manage
+roles and bindings] for users and groups within the cluster.
+
+|Manage Authorization
+a|* Run checks to determine which users or groups can access a certain resource or
+resource type.
+* Check to see whether a particular user or group can access a certain resource or
+resource type.
+
+|View Certain Cluster-level Resources
+|View (get/list/watch) certain resources like
+xref:../dev_guide/events.adoc#dev-guide-events[events],
+xref:../admin_guide/manage_rbac.adoc#managing-role-bindings[nodes],
+xref:../architecture/additional_concepts/storage.adoc#persistent-volumes[persistent
+volumes], and
+xref:../admin_guide/manage_scc.adoc#admin-guide-manage-scc[security context
+constraints].
+
+|Create Daemon Sets
+|Create link:http://kubernetes.io/docs/admin/daemons/[daemon sets], which ensure that all (or some) nodes run a copy of a pod.
+
+|===
+
+endif::[]
+
+ifdef::openshift-aro[]
+== Cluster-level Permissions
+
+View (get/list/watch) certain resources such as
+xref:../dev_guide/events.adoc#dev-guide-events[events],
+xref:../admin_guide/manage_rbac.adoc#managing-role-bindings[nodes],
+xref:../architecture/additional_concepts/storage.adoc#persistent-volumes[persistent
+volumes], and
+xref:../admin_guide/manage_scc.adoc#admin-guide-manage-scc[security context
+constraints].
+endif::[]

@@ -1,0 +1,478 @@
+[[using-images-db-images-mariadb]]
+= MariaDB
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+toc::[]
+
+[[mariadb-overview]]
+== Overview
+{product-title} provides a container image for running MariaDB. This image can
+provide database services based on username, password, and database name
+settings provided in a configuration file.
+
+[[mariadb-versions]]
+== Versions
+Currently, {product-title} provides versions
+https://github.com/sclorg/mariadb-container/tree/master/10.0[10.0] and
+https://github.com/sclorg/mariadb-container/tree/master/10.1[10.1] of MariaDB.
+
+[[mariadb-images]]
+== Images
+
+ifdef::openshift-online[]
+RHEL 7 images are available through the Red Hat Registry:
+
+----
+$ docker pull registry.redhat.io/rhscl/mariadb-100-rhel7
+$ docker pull registry.redhat.io/rhscl/mariadb-101-rhel7
+----
+
+You can use the MariaDB 10.1 image through the `mariadb` image stream.
+endif::[]
+
+ifndef::openshift-online[]
+These images come in two flavors, depending on your needs:
+
+* RHEL 7
+* CentOS 7
+
+*RHEL 7 Based Images*
+
+The RHEL 7 images are available through the Red Hat Registry:
+
+----
+$ docker pull registry.redhat.io/rhscl/mariadb-100-rhel7
+$ docker pull registry.redhat.io/rhscl/mariadb-101-rhel7
+----
+
+*CentOS 7 Based Images*
+
+These images are available on Docker Hub:
+
+----
+$ docker pull openshift/mariadb-100-centos7
+$ docker pull centos/mariadb-101-centos7
+----
+
+To use these images, you can either access them directly from these
+registries or push them into your {product-title} container image registry. Additionally,
+you can create an ImageStream that points to the image,
+either in your container image registry or at the external location. Your {product-title}
+resources can then reference the ImageStream. You can find
+https://github.com/openshift/origin/tree/master/examples/image-streams[example]
+ImageStream definitions for all the provided {product-title} images.
+endif::[]
+
+[[mariadb-configuration-and-usage]]
+== Configuration and Usage
+
+[[initializing-the-database]]
+=== Initializing the Database
+
+The first time you use the shared volume, the database is created along with
+the database administrator user and the MariaDB root user (if you specify the
+`MYSQL_ROOT_PASSWORD` environment variable). Afterwards, the MariaDB daemon
+starts up. If you are re-attaching the volume to another container, then the
+database, database user, and the administrator user are not created, and the
+MariaDB daemon starts.
+
+The following command creates a new database
+xref:../../architecture/core_concepts/pods_and_services.adoc#pods[pod] with
+MariaDB running in a container:
+
+----
+$ oc new-app \
+    -e MYSQL_USER=<username> \
+    -e MYSQL_PASSWORD=<password> \
+    -e MYSQL_DATABASE=<database_name> \
+ifdef::openshift-enterprise,openshift-dedicated[]
+    registry.redhat.io/rhscl/mariadb-101-rhel7
+endif::[]
+ifdef::openshift-origin[]
+    centos/mariadb-101-centos7
+endif::[]
+ifdef::openshift-online[]
+    mariadb:10.1
+endif::[]
+----
+
+[[running-mariadb-commands-in-containers]]
+=== Running MariaDB Commands in Containers
+
+{product-title} uses https://www.softwarecollections.org/[Software Collections]
+(SCLs) to install and launch MariaDB. If you want to execute a MariaDB command
+inside of a running container (for debugging), you must invoke it using bash.
+
+To do so, first identify the name of the running MariaDB pod. For example, you
+can view the list of pods in your current project:
+
+----
+$ oc get pods
+----
+
+Then, open a remote shell session to the pod:
+
+----
+$ oc rsh <pod>
+----
+
+When you enter the container, the required SCL is automatically enabled.
+
+You can now run *mysql* commands from the bash shell to start a MariaDB
+interactive session and perform normal MariaDB operations. For example, to
+authenticate as the database user:
+
+====
+----
+bash-4.2$ mysql -u $MYSQL_USER -p$MYSQL_PASSWORD -h $HOSTNAME $MYSQL_DATABASE
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 4
+Server version: 5.5.37 MySQL Community Server (GPL)
+...
+mysql>
+----
+====
+
+When you are finished, enter *quit* or *exit* to leave the MySQL session.
+
+[[mariadb-environment_variables]]
+=== Environment Variables
+
+The MariaDB user name, password, and database name must be configured with the
+following environment variables:
+
+.MariaDB Environment Variables
+[cols="4a,6a",options="header"]
+|===
+
+|Variable Name |Description
+
+|`MYSQL_USER`
+|User name for MySQL account to be created.
+
+|`MYSQL_PASSWORD`
+|Password for the user account.
+
+|`MYSQL_DATABASE`
+|Database name.
+
+|`MYSQL_ROOT_PASSWORD`
+|Password for the root user (optional).
+|===
+
+[WARNING]
+====
+You must specify the user name, password, and database name. If you do not
+specify all three, the pod will fail to start and {product-title} will
+continuously try to restart it.
+====
+
+MariaDB settings can be configured with the following environment variables:
+
+.Additional MariaDB Settings
+[cols="3a,6a,1a",options="header"]
+|===
+
+|Variable Name |Description |Default
+
+|`MYSQL_LOWER_CASE_TABLE_NAMES`
+|Sets how the table names are stored and compared.
+|0
+
+|`MYSQL_MAX_CONNECTIONS`
+|The maximum permitted number of simultaneous client connections.
+|151
+
+|`MYSQL_MAX_ALLOWED_PACKET`
+|The maximum size of one packet or any generated/intermediate string.
+|200M
+
+|`MYSQL_FT_MIN_WORD_LEN`
+|The minimum length of the word to be included in a FULLTEXT index.
+|4
+
+|`MYSQL_FT_MAX_WORD_LEN`
+|The maximum length of the word to be included in a FULLTEXT index.
+|20
+
+|`MYSQL_AIO`
+|Controls the *innodb_use_native_aio* setting value if the native AIO is broken.
+|1
+
+|`MYSQL_TABLE_OPEN_CACHE`
+|The number of open tables for all threads.
+|400
+
+|`MYSQL_KEY_BUFFER_SIZE`
+|The size of the buffer used for index blocks.
+|32M (or 10% of available memory)
+
+|`MYSQL_SORT_BUFFER_SIZE`
+|The size of the buffer used for sorting.
+|256K
+
+|`MYSQL_READ_BUFFER_SIZE`
+|The size of the buffer used for a sequential scan.
+|8M (or 5% of available memory)
+
+|`MYSQL_INNODB_BUFFER_POOL_SIZE`
+|The size of the buffer pool where InnoDB caches table and index data.
+|32M (or 50% of available memory)
+
+|`MYSQL_INNODB_LOG_FILE_SIZE`
+|The size of each log file in a log group.
+|8M (or 15% of available memory)
+
+|`MYSQL_INNODB_LOG_BUFFER_SIZE`
+|The size of the buffer that InnoDB uses to write to the log files on disk.
+|8M (or 15% of available memory)
+
+|`MYSQL_DEFAULTS_FILE`
+|Point to an alternative configuration file.
+|/etc/my.cnf
+
+|`MYSQL_BINLOG_FORMAT`
+|Set sets the binlog format, supported values are `row` and `statement`.
+|statement
+|===
+
+[[mariadb-volume-mount-points]]
+=== Volume Mount Points
+
+The MariaDB image can be run with mounted volumes to enable persistent storage
+for the database:
+
+* *_/var/lib/mysql/data_* - The MySQL data directory is where
+MariaDB stores database files.
+
+ifndef::openshift-online[]
+[NOTE]
+====
+When mounting a directory from the host into the container, ensure that the
+mounted directory has the appropriate permissions. Also verify that the owner
+and group of the directory match the user name running inside the container.
+====
+endif::[]
+
+[[mariadb-changing-passwords]]
+=== Changing Passwords
+
+Passwords are part of the image configuration, therefore the only supported
+method to change passwords for the database user (`MYSQL_USER`) and *admin*
+user is by changing the environment variables `MYSQL_PASSWORD` and
+`MYSQL_ROOT_PASSWORD`, respectively.
+
+You can view the current passwords by viewing the pod or deployment
+configuration in the web console or by listing the environment variables with
+the CLI:
+
+----
+$ oc set env pod <pod_name> --list
+----
+
+Changing database passwords through SQL statements or any way other than through
+the environment variables aforementioned causes a mismatch between the values
+stored in the variables and the actual passwords. Whenever a database container
+starts, it resets the passwords to the values stored in the environment
+variables.
+
+To change these passwords, update one or both of the desired environment
+variables for the related deployment configuration(s) using the `oc set env`
+command. If multiple deployment configurations utilize these environment
+variables, for example in the case of an application created from a template,
+you must update the variables on each deployment configuration so that the
+passwords are in sync everywhere. This can be done all in the same command:
+
+----
+$ oc set env dc <dc_name> [<dc_name_2> ...] \
+  MYSQL_PASSWORD=<new_password> \
+  MYSQL_ROOT_PASSWORD=<new_root_password>
+----
+
+[IMPORTANT]
+====
+Depending on your application, there may be other environment variables for
+passwords in other parts of the application that should also be updated to
+match. For example, there could be a more generic `DATABASE_USER` variable in
+a front-end pod that should match the database user's password. Ensure that
+passwords are in sync for all required environment variables per your
+application, otherwise your pods may fail to redeploy when triggered.
+====
+
+Updating the environment variables triggers the redeployment of the database
+server if you have a
+xref:../../dev_guide/deployments/basic_deployment_operations.adoc#config-change-trigger[configuration change
+trigger]. Otherwise, you must manually start a new deployment in order to apply
+the password changes.
+
+To verify that new passwords are in effect, first open a remote shell session to
+the running MariaDB pod:
+
+----
+$ oc rsh <pod>
+----
+
+From the bash shell, verify the database user's new password:
+
+----
+bash-4.2$ mysql -u $MYSQL_USER -p<new_password> -h $HOSTNAME $MYSQL_DATABASE -te "SELECT * FROM (SELECT database()) db CROSS JOIN (SELECT user()) u"
+----
+
+If the password was changed correctly, you should see a table like this:
+
+====
+----
++------------+---------------------+
+| database() | user()              |
++------------+---------------------+
+| sampledb   | user0PG@172.17.42.1 |
++------------+---------------------+
+----
+====
+
+To verify the *root* user's new password:
+
+====
+----
+bash-4.2$ mysql -u root -p<new_root_password> -h $HOSTNAME $MYSQL_DATABASE -te "SELECT * FROM (SELECT database()) db CROSS JOIN (SELECT user()) u"
+----
+====
+
+If the password was changed correctly, you should see a table like this:
+
+====
+----
++------------+------------------+
+| database() | user()           |
++------------+------------------+
+| sampledb   | root@172.17.42.1 |
++------------+------------------+
+----
+====
+
+[[creating-database-service-from-template]]
+== Creating a Database Service from a Template
+
+{product-title} provides a xref:../../dev_guide/templates.adoc#dev-guide-templates[template] to make
+creating a new database service easy. The template provides parameter fields to
+define all the mandatory environment variables (user, password, database name,
+etc) with predefined defaults including auto-generation of password values. It
+will also define both a
+xref:../../architecture/core_concepts/deployments.adoc#deployments-and-deployment-configurations[deployment
+configuration] and a
+xref:../../architecture/core_concepts/pods_and_services.adoc#services[service].
+
+The MariaDB
+ifdef::openshift-online[]
+template
+endif::[]
+ifndef::openshift-online[]
+templates
+endif::[]
+should have been registered in the default *openshift*
+project by your cluster administrator during the initial cluster setup.
+ifdef::openshift-enterprise,openshift-origin[]
+See xref:../../install_config/imagestreams_templates.adoc#install-config-imagestreams-templates[Loading the Default Image Streams and Templates]
+for more details, if required.
+endif::[]
+
+ifdef::openshift-online[]
+The following template is available:
+endif::[]
+ifndef::openshift-online[]
+There are two templates available:
+
+* `mariadb-ephemeral` is for development or testing purposes only because it uses
+ephemeral storage for the database content. This means that if the database
+pod is restarted for any reason, such as the pod being moved to another node
+or the deployment configuration being updated and triggering a redeploy, all
+data will be lost.
+endif::openshift-online[]
+* `mariadb-persistent` uses a persistent volume store for the database data
+which means the data will survive a pod restart.
+ifndef::openshift-online[]
+Using persistent volumes requires a persistent volume pool be defined in the
+{product-title} deployment.
+endif::[]
+ifdef::openshift-enterprise,openshift-origin[]
+Cluster administrator instructions for setting up the pool are located in
+xref:../../install_config/persistent_storage/persistent_storage_nfs.adoc#install-config-persistent-storage-persistent-storage-nfs[Persistent Storage Using NFS].
+endif::[]
+
+You can instantiate templates by following these
+xref:../../dev_guide/templates.adoc#dev-guide-templates[instructions].
+
+Once you have instantiated the service, you can copy the user name, password,
+and database name environment variables into a deployment configuration for
+another component that intends to access the database. That component can then
+access the database through the service that was defined.
+
+[[mariadb-troubleshooting]]
+== Troubleshooting
+
+// TODO: Put tags around the body of this section so that
+// it can be snarfed by the OSE Troubleshooting Guide.
+
+This section describes some troubles you might encounter
+and presents possible resolutions.
+
+[[mariadb-linux-native-aio-failure]]
+=== Linux Native AIO Failure
+
+.Symptom
+The MySQL container fails to start and the logs show something like:
+
+----
+151113  5:06:56 InnoDB: Using Linux native AIO
+151113  5:06:56  InnoDB: Warning: io_setup() failed with EAGAIN. Will make 5 attempts before giving up.
+InnoDB: Warning: io_setup() attempt 1 failed.
+InnoDB: Warning: io_setup() attempt 2 failed.
+Waiting for MySQL to start ...
+InnoDB: Warning: io_setup() attempt 3 failed.
+InnoDB: Warning: io_setup() attempt 4 failed.
+Waiting for MySQL to start ...
+InnoDB: Warning: io_setup() attempt 5 failed.
+151113  5:06:59  InnoDB: Error: io_setup() failed with EAGAIN after 5 attempts.
+InnoDB: You can disable Linux Native AIO by setting innodb_use_native_aio = 0 in my.cnf
+151113  5:06:59 InnoDB: Fatal error: cannot initialize AIO sub-system
+151113  5:06:59 [ERROR] Plugin 'InnoDB' init function returned error.
+151113  5:06:59 [ERROR] Plugin 'InnoDB' registration as a STORAGE ENGINE failed.
+151113  5:06:59 [ERROR] Unknown/unsupported storage engine: InnoDB
+151113  5:06:59 [ERROR] Aborting
+----
+
+.Explanation
+MariaDB's storage engine was unable to use the kernel's
+AIO (Asynchronous I/O) facilities due to resource limits.
+
+.Resolution
+
+Turn off AIO usage entirely, by setting environment variable `*MYSQL_AIO*` to
+have value `0`.  On subsequent deployments, this arranges for the MySQL
+configuration variable `*innodb_use_native_aio*` to have value `0`.
+
+ifndef::openshift-online[]
+Alternatively, increase the `aio-max-nr` kernel resource.
+The following example examines the current value of `aio-max-nr` and doubles it.
+
+----
+$ sysctl fs.aio-max-nr
+fs.aio-max-nr = 1048576
+# sysctl -w fs.aio-max-nr=2097152
+----
+
+This is a per-node resolution and lasts until the next node reboot.
+endif::[]
+
+// Add more subsections here.
+// TEMPLATE:
+// .Symptom
+// .Explanation
+// .Resolution

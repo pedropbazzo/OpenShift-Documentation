@@ -1,0 +1,860 @@
+[[install-config-upgrading-automated-upgrades]]
+= Performing automated in-place cluster upgrades
+{product-author}
+{product-version}
+:latest-tag: v3.11.98
+:latest-short-tag: v3.11
+:latest-int-tag: v3.11.98
+ifdef::openshift-enterprise[]
+:pb-prefix: /usr/share/ansible/openshift-ansible/
+endif::[]
+ifdef::openshift-origin[]
+:pb-prefix: ~/openshift-ansible/
+endif::[]
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+:prewrap!:
+
+toc::[]
+
+If you installed using the standard
+xref:../install/index.adoc#instal-planning[cluster installation] process, and
+the inventory file that was used is available, you can use upgrade playbooks to
+automate the cluster upgrade process.
+
+To upgrade {product-title}, you run Ansible playbooks with the same inventory
+file that you used during installation. You run the same *_v3_11_* upgrade
+playbooks to:
+
+- Upgrade existing {product-title} version 3.10 clusters to version 3.11.
+- Upgrade {product-title} version 3.11 clusters to the latest
+xref:../release_notes/ocp_3_11_release_notes.adoc#ocp-311-asynchronous-errata-updates[asynchronous
+errata update].
+
+[IMPORTANT]
+====
+Running Ansible playbooks with the `--tags` or `--check` options is not supported by Red Hat.
+====
+
+[[upgrade-workflow]]
+== Upgrade workflow
+
+The 3.10 to 3.11 control plane upgrade performs the following steps for
+you:
+
+* Back up all etcd data for recovery purposes.
+* Update the API and controllers from 3.10 to 3.11.
+* Update internal data structures to 3.11.
+* Update the default router, if one exists, from 3.10 to 3.11.
+* Update the default registry, if one exists, from 3.10 to 3.11.
+* Update the default image streams and InstantApp templates.
+
+The 3.10 to 3.11 node upgrade performs a rolling update of nodes, which:
+
+* Marks a subset of nodes unschedulable and drains them of pods.
+* Updates node components from 3.10 to 3.11.
+* Returns those nodes to service.
+
+[[upgrade-prerequisites]]
+== Prerequisites
+
+Before you upgrade your cluster:
+
+* Review the
+xref:../release_notes/ocp_3_11_release_notes.adoc#release-notes-ocp-3-11-release-notes[{product-title} 3.11 Release Notes].
+The release notes contain important notices about changes to {product-title} and
+its function.
+
+* If you are completing a large-scale upgrade, which involves at least 10 worker
+nodes and thousands of projects and pods, review
+xref:special-considerations-for-large-scale-upgrades[Special considerations for
+large-scale upgrades] to prevent upgrade failures.
+
+* Upgrade the cluster to the
+link:https://docs.openshift.com/container-platform/3.10/release_notes/ocp_3_10_release_notes.html#ocp-3-10-45[latest asynchronous release of version 3.10].
+If your cluster is at a version earlier
+than 3.10, you must first upgrade incrementally. For example, upgrade from 3.7
+to 3.9 (the 3.8 version was link:https://docs.openshift.com/container-platform/3.9/release_notes/ocp_3_9_release_notes.html#ocp-39-about-this-release[skipped]),
+and then from 3.9 to 3.10.
+
+* Run the
+xref:../day_two_guide/environment_health_checks.adoc#day-two-environment-health-checks[Environment
+health checks] to verify the cluster's health. In this process, you confirm that
+the nodes are in the *Ready* state and running the expected starting version and
+that there are no diagnostic errors or warnings.
+
+* Ensure that your cluster meets the current
+xref:../install/prerequisites.adoc#install-config-install-prerequisites[prerequisites]
+If it does not, your upgrade might fail.
+
+* The day before the upgrade, validate {product-title} storage migration to ensure
+potential issues are resolved before the outage window:
++
+----
+$ oc adm migrate storage --include=* --loglevel=2 --confirm --config /etc/origin/master/admin.kubeconfig
+----
+
+ifdef::openshift-origin[]
+[[running-upgrade-playbooks]]
+== Upgrading OKD
+
+To upgrade OKD:
+. Check out the latest *openshift-ansible* code:
++
+----
+# cd ~/openshift-ansible
+# git pull https://github.com/openshift/openshift-ansible master
+----
+
+. Run the correct upgrade playbook. Use the same inventory file that you used to
+install OKD. If your inventory file is not in the *_/etc/ansible/hosts_*
+directory, add the `-i` flag and specify the location.
+.. To upgrade to a new OKD minor version, run:
++
+----
+# ansible-playbook \
+    -i </path/to/inventory/file> \
+    playbooks/byo/openshift-cluster/upgrades/<version>/upgrade.yml
+----
+.. To upgrade to the latest z-stream version of a minor release, such as 3.11.z,
+run:
++
+----
+# ansible-playbook \
+    -i </path/to/inventory/file> \
+    playbooks/byo/openshift-cluster/upgrades/<version>/upgrade.yml
+----
+
+. After all master and node upgrades have completed, reboot all hosts.
+
+. xref:verifying-the-upgrade[Verify the upgrade].
+endif::[]
+
+ifdef::openshift-enterprise[]
+[[preparing-for-an-automated-upgrade]]
+== Preparing for an upgrade
+
+After you satisfy the prerequisites, prepare for an automated upgrade:
+
+. Pull the latest subscription data from Red Hat Subscription Manager:
++
+----
+# subscription-manager refresh
+----
+
+. If you are upgrading from {product-title} 3.10 to 3.11:
+
+.. Back up the files that you need if you must downgrade to {product-title}
+3.10:
+
+... On master hosts, back up the following files:
++
+----
+/etc/origin/master/master-config.yaml
+/etc/origin/master/master.env
+/etc/origin/master/scheduler.json
+----
+
+... On node hosts, including masters, back up the following files:
++
+----
+/etc/origin/node/node-config.yaml
+----
+
+... On etcd hosts, including masters that have etcd co-located on them, back up
+the following file:
++
+----
+/etc/etcd/etcd.conf
+----
+
+.. The upgrade process creates a backup of all etcd data for recovery purposes,
+but ensure that you have a recent etcd backup at
+*_/backup/etcd-xxxxxx/backup.db_* before continuing. Manual etcd backup steps
+are described in the
+xref:../day_two_guide/environment_backup.adoc#etcd-backup_environment-backup[Day Two Operations Guide].
++
+[NOTE]
+====
+When you upgrade {product-title}, your etcd configuration does not change.
+Whether you run etcd as static pods on master hosts or as a separate service on
+master hosts or separate hosts does not change after you upgrade.
+====
+
+.. Manually disable the 3.10 repository and enable the 3.11 repository on each
+master and node host. You must also enable the *rhel-7-server-ansible-2.6-rpms*
+repository, if it is not already enabled:
++
+----
+# subscription-manager repos --disable="rhel-7-server-ose-3.10-rpms" \
+    --disable="rhel-7-server-ansible-2.4-rpms" \
+    --enable="rhel-7-server-ose-3.11-rpms" \
+    --enable="rhel-7-server-rpms" \
+    --enable="rhel-7-server-extras-rpms" \
+    --enable="rhel-7-server-ansible-2.6-rpms"
+# yum clean all
+----
+
+.. Ensure that you have the latest version of the *openshift-ansible* package on
+the host you run the upgrade playbooks on:
++
+----
+# yum update -y openshift-ansible
+----
+
+.. Prepare for the Cluster Monitoring Operator. In version 3.11, the Cluster
+Monitoring Operator is installed on an infrastructure node by default. If your
+cluster does not use infrastructure nodes:
+*** xref:../install_config/adding_hosts_to_existing_cluster.adoc#install-config-adding-hosts-to-cluster[Add]
+an infrastructure node to your cluster.
+*** Disable the Cluster Monitoring Operator by adding
+`openshift_cluster_monitoring_operator_install=false` to your inventory file.
+*** Specify which node to install the Cluster Monitoring Operator on by
+xref:../admin_guide/manage_nodes.adoc#updating-labels-on-nodes[marking it]
+with the `openshift_cluster_monitoring_operator_node_selector`.
+
+.. If you use the standard {product-title} registry, prepare for the change from
+`registry.access.redhat.com` to `registry.redhat.io`. Complete the configuration
+steps in
+xref:../install_config/configuring_red_hat_registry.adoc#install-config-configuring-red-hat-registry[Accessing and Configuring the Red Hat Registry].
+
+. Review and update your
+xref:../install/configuring_inventory_file.adoc#configuring-ansible[inventory file].
+
+.. Ensure that any manual configuration changes you made to your master or node
+configuration files since your last Ansible playbook run, whether that was
+initial installation or your most recent cluster upgrade, are in the inventory
+file. For any variables that are relevant to the manual
+changes you made, apply the equivalent appropriate changes to your inventory
+files before running the upgrade. Otherwise, your manual changes might be
+overwritten by default values during the upgrade, which could cause pods to not
+run properly or other cluster stability issues.
+.. By default, the installer checks to see if your certificates will expire
+within a year and fails if they will expire within that time. To change the
+number of days that your certificate must valid, specify a new value for the
+`openshift_certificate_expiry_warning_days` parameter. For example, to ensure
+that your certificates are valid for a 180 days, specify
+`openshift_certificate_expiry_warning_days=180`.
+.. To skip checking if your certificates will expire, set
+`openshift_certificate_expiry_fail_on_warn=False`.
+.. If you made any changes to `admissionConfig` settings in your
+master configuration files, review the
+`openshift_master_admission_plugin_config` variable in
+xref:../install/configuring_inventory_file.adoc#configuring-ansible[Configuring
+Your Inventory File]. Failure to do so might cause pods to get stuck in
+`Pending` state if you had `ClusterResourceOverride` settings manually
+configured previously, as described in
+xref:../admin_guide/overcommit.adoc#configuring-masters-for-overcommitment[Configuring Masters for Overcommitment].
+.. If you used the `openshift_hostname` parameter in versions of {product-title}
+before 3.10, ensure that the `openshift_kubelet_name_override` parameter is
+still in your inventory file and set to the value of `openshift_hostname` that
+you used in previous versions.
++
+[IMPORTANT]
+====
+You must not remove the `openshift_kubelet_name_override` parameter from your
+inventory file after you upgrade.
+====
+.. If you manually manage the cluster's *_/etc/origin/master/htpasswd_* file,
+add `openshift_master_manage_htpasswd=false` to your inventory file to prevent
+the upgrade process from overwriting the *_htpasswd_* file.
+
+
+
+[[updating-policy-definitions]]
+=== Updating policy definitions
+
+During a cluster upgrade, and on every restart of any master, the
+xref:../architecture/additional_concepts/authorization.adoc#roles[default
+cluster roles] are automatically reconciled to restore any missing permissions.
+
+. If you customized default cluster roles and want to ensure a role reconciliation
+does not modify them, protect each role from reconciliation:
++
+----
+$ oc annotate clusterrole.rbac <role_name> --overwrite rbac.authorization.kubernetes.io/autoupdate=false
+----
++
+[WARNING]
+====
+You must manually update the roles that contain this setting to include any new
+or required permissions after upgrading.
+====
+
+. Generate a default bootstrap policy template file:
++
+----
+$ oc adm create-bootstrap-policy-file --filename=policy.json
+----
++
+[NOTE]
+====
+The contents of the file vary based on the {product-title} version, but the file
+contains only the default policies.
+====
+
+. Update the *_policy.json_* file to include any cluster role customizations.
+
+. Use the policy file to automatically reconcile roles and role bindings that
+are not reconcile protected:
++
+----
+$ oc auth reconcile -f policy.json
+----
+
+. Reconcile security context constraints:
++
+----
+# oc adm policy reconcile-sccs \
+    --additive-only=true \
+    --confirm
+----
+
+[[upgrading-control-plane-nodes-separate-phases]]
+=== Upgrade phases
+
+You can upgrade the {product-title} cluster in one or more phases. You can choose
+to upgrade all hosts in one phase by running a single Ansible playbook
+or upgrade the _control plane_, or master components, and nodes in multiple phases
+using separate playbooks.
+
+[NOTE]
+====
+If your {product-title} cluster uses GlusterFS pods, you must perform the upgrade in multiple phases.
+See xref:special-considerations-for-glusterfs[Special Considerations When Using Containerized GlusterFS] for details on how to upgrade with GlusterFS.
+====
+
+When upgrading in separate phases, the control plane phase includes upgrading:
+
+- Master components
+- Node services running on masters
+- Docker or CRI-O running on masters
+- Docker or CRI-O running on any stand-alone etcd hosts
+
+If you upgrade only the nodes, you must first upgrade the control plane. The
+node phase includes upgrading:
+
+- Node services running on stand-alone nodes
+- Docker or CRI-O running on stand-alone nodes
+
+Nodes that run master components are upgraded only during the control plane upgrade
+phase. This ensures that the node services and container engines on masters are not
+upgraded twice, once during the control plane phase and again during the node
+phase.
+
+[[customizing-node-upgrades]]
+=== Node upgrade parameters
+
+Whether you upgrade in a single or multiple phases, you can customize how the node
+portion of the upgrade progresses by passing certain Ansible variables to an
+upgrade playbook using the `-e` option.
+
+* Set the `openshift_upgrade_nodes_serial` variable to an integer or
+percentage to control how many node hosts are upgraded at the same time. The
+default is `1`, which upgrades one node at a time.
++
+For example, to upgrade 20 percent of the total number of detected nodes at a
+time, run:
++
+----
+$ ansible-playbook -i <path/to/inventory/file> \
+    </path/to/upgrade/playbook> \
+    -e openshift_upgrade_nodes_serial="20%"
+----
+
+* Set the `openshift_upgrade_nodes_label` to specify that only nodes with a
+certain label are upgraded.
++
+For example, to only upgrade nodes in the *group1* region, two at a time:
++
+----
+$ ansible-playbook -i <path/to/inventory/file> \
+    </path/to/upgrade/playbook> \
+    -e openshift_upgrade_nodes_serial="2" \
+    -e openshift_upgrade_nodes_label="region=group1"
+----
++
+[NOTE]
+====
+See xref:../admin_guide/manage_nodes.adoc#updating-labels-on-nodes[Managing
+Nodes] for more information about node labels.
+====
+
+* Set the `openshift_upgrade_nodes_max_fail_percentage` variable to specify
+how many nodes can fail in each batch of upgrades. If the percentage of failed
+nodes exceeds your value, the playbook stops the upgrade process.
+
+* Set the `openshift_upgrade_nodes_drain_timeout` variable to specify the
+length of time to wait before marking a node as failed.
++
+In this example, 10 nodes are upgraded at a time, the upgrade stops if more
+than 20 percent of the nodes fail, and a node is marked as failed if it takes
+more than 600 seconds to drain the node:
++
+----
+$ ansible-playbook -i <path/to/inventory/file> \
+    </path/to/upgrade/playbook> \
+    -e openshift_upgrade_nodes_serial=10 \
+    -e openshift_upgrade_nodes_max_fail_percentage=20 \
+    -e openshift_upgrade_nodes_drain_timeout=600
+----
+
+[[upgrade-hooks]]
+=== Ansible hooks for upgrades
+
+When upgrading {product-title}, you can execute custom tasks during specific
+operations through a system called _hooks_. Hooks allow cluster administrators
+to provide files defining tasks to execute before or after specific areas
+during upgrades. You can use hooks to validate or modify custom
+infrastructure when upgrading {product-title}.
+
+Because when a hook fails, the operation fail, design hooks that are idempotent,
+or can run multiple times and provide the same results.
+
+[[upgrade-hooks-limitations]]
+==== Limitations
+
+- Hooks have no defined or versioned interface. They can use internal
+*openshift-ansible* variables, but there is no guarantee these variables will
+remain in
+future releases. In the future, hooks might be versioned, giving you advance
+warning that your hook needs to be updated to work with the latest
+*openshift-ansible*.
+- Hooks have no error handling, so an error in a hook halts the upgrade
+process. If you get an error, you must address the problem and then start the
+upgrade again.
+- You can run node upgrade hooks on only nodes, not masters. To run the hooks on
+masters, you must specify a master hook for those nodes.
+
+[[upgrade-hooks-using-hooks]]
+==== Using hooks
+
+You define hooks in the *_hosts_* inventory file under the `OSEv3:vars`
+section.
+
+Each hook must point to a YAML file that defines Ansible tasks. This file is
+used as an _include_, meaning that the file cannot be a playbook, but is a set
+of tasks. Best practice suggests using absolute paths to the hook file to avoid
+any ambiguity.
+
+.Example hook definitions in an inventory file
+[source]
+----
+[OSEv3:vars]
+openshift_master_upgrade_pre_hook=/usr/share/custom/pre_master.yml
+openshift_master_upgrade_hook=/usr/share/custom/master.yml
+openshift_master_upgrade_post_hook=/usr/share/custom/post_master.yml
+
+openshift_node_upgrade_pre_hook=/usr/share/custom/pre_node.yml
+openshift_node_upgrade_hook=/usr/share/custom/node.yml
+openshift_node_upgrade_post_hook=/usr/share/custom/post_node.yml
+----
+
+.Example *_pre_master.yml_* task
+[source.yaml]
+----
+---
+# Trivial example forcing an operator to ack the start of an upgrade
+# file=/usr/share/custom/pre_master.yml
+
+- name: note the start of a master upgrade
+  debug:
+      msg: "Master upgrade of {{ inventory_hostname }} is about to start"
+
+- name: require an operator agree to start an upgrade
+  pause:
+      prompt: "Hit enter to start the master upgrade"
+----
+
+[[upgrade-hooks-available-hooks]]
+==== Available upgrade hooks
+
+[[upgrade-hooks-masters]]
+.Master Upgrade Hooks
+[cols="1,1",options="header"]
+|===
+|Hook name |Description
+
+|`openshift_master_upgrade_pre_hook`
+a|- Runs _before_ each master is upgraded.
+- This hook runs against _each master_ in serial.
+- If a task must run against a different host, the task must use
+link:http://docs.ansible.com/ansible/playbooks_delegation.html#delegation[`delegate_to` or `local_action`].
+
+|`openshift_master_upgrade_hook`
+a|- Runs _after_ each master is upgraded but _before_ its service or system restart.
+- This hook runs against _each master_ in serial.
+- If a task must run against a different host, the task must use
+link:http://docs.ansible.com/ansible/playbooks_delegation.html#delegation[`delegate_to` or `local_action`].
+
+|`openshift_master_upgrade_post_hook`
+a|- Runs _after_ each master is upgraded and its service or system restarts.
+- This hook runs against _each master_ in serial.
+- If a task must run against a different host, the task must use
+link:http://docs.ansible.com/ansible/playbooks_delegation.html#delegation[`delegate_to`
+or `local_action`].
+|===
+
+[[upgrade-hooks-nodes]]
+.Node upgrade hooks
+[cols="1,1",options="header"]
+|===
+|Hook name |Description
+
+|`openshift_node_upgrade_pre_hook`
+a|- Runs _before_ each node is upgraded.
+- This hook runs against _each node_ in serial.
+- If a task must run against a different host, the task must use
+link:http://docs.ansible.com/ansible/playbooks_delegation.html#delegation[`delegate_to` or `local_action`].
+
+|`openshift_node_upgrade_hook`
+a|- Runs _after_ each node is upgraded but _before_ it is marked schedulable again.
+- This hook runs against _each node_ in serial.
+- If a task must run against a different host, they task must use
+link:http://docs.ansible.com/ansible/playbooks_delegation.html#delegation[`delegate_to` or `local_action`].
+
+|`openshift_node_upgrade_post_hook`
+a|- Runs _after_ each node is upgraded. It is the _last_ node upgrade action.
+- This hook runs against _each node_ in serial.
+- If a task must run against a different host, the task must use
+link:http://docs.ansible.com/ansible/playbooks_delegation.html#delegation[`delegate_to` or `local_action`].
+
+|===
+
+[[special-considerations-for-upgrade]]
+=== Special considerations for upgrading {product-title}
+
+If your {product-title} cluster uses a mixed environment or gcePD storage,
+you need to take more steps before you upgrade it.
+
+[[special-considerations-for-large-scale-upgrades]]
+==== Special considerations for large-scale upgrades
+
+For large-scale cluster upgrades, which involve at least 10 worker nodes and
+thousands of projects and pods, the API object storage migration should be
+performed prior to running the upgrade playbooks, and then again after the
+upgrade has successfully completed. Otherwise, the upgrade process will fail.
+
+Refer to the *Running the pre- and post- API server model object migration
+outside of the upgrade window* section of the
+link:https://access.redhat.com/articles/3208381[Recommendations for large-scale
+OpenShift upgrades] for further guidance.
+
+[[special-considerations-for-mixed-environments]]
+==== Special considerations for mixed environments
+
+Before you upgrade a mixed environment, such as one with Red Hat Enterprise
+Linux (RHEL) and RHEL Atomic Host, set values in the inventory file
+for both the `openshift_pkg_version` and `openshift_image_tag` parameters.
+Setting these values ensures that all nodes in your cluster run the same
+version of {product-title}.
+
+For example, to upgrade from {product-title}
+3.9 to {product-title} 3.10, set the following parameters and values:
+
+----
+openshift_pkg_version=-3.10.16
+openshift_image_tag=v3.10.16
+----
+
+[NOTE]
+====
+These parameters can also be present in other, non-mixed, environments.
+====
+
+
+[[special-considerations-for-gcepd]]
+==== Special considerations when using gcePD
+Because the default gcePD storage provider uses an RWO (Read-Write Only) access
+mode, you cannot perform a rolling upgrade on the registry or scale the registry
+to multiple pods. Therefore, when upgrading {product-title}, you must specify
+the following environment variables in your Ansible inventory file:
+
+----
+[OSEv3:vars]
+
+openshift_hosted_registry_storage_provider=gcs
+openshift_hosted_registry_storage_gcs_bucket=bucket01
+openshift_hosted_registry_storage_gcs_keyfile=test.key
+openshift_hosted_registry_storage_gcs_rootdirectory=/registry
+----
+
+[[upgrading-ocp]]
+== Upgrading to the latest {product-title} release
+
+To upgrade an existing {product-title} 3.10 or 3.11 cluster to the latest 3.11
+release:
+
+. xref:preparing-for-an-automated-upgrade[Prepare for an upgrade]
+to ensure you use the latest upgrade playbooks.
+
+. Ensure the `openshift_deployment_type` parameter in your inventory file is set
+to `openshift-enterprise`.
+
+. To enable rolling, full system restarts of the hosts, set the
+`openshift_rolling_restart_mode` parameter in your inventory file to `system`.
+Otherwise, the service is restarted on HA masters, but the systems do not reboot.
+xref:../install/configuring_inventory_file.adoc#configuring-cluster-variables[Configuring
+Cluster Variables] for details.
+
+. Upgrade your nodes.
++
+If your inventory file is located somewhere other than the default
+*_/etc/ansible/hosts_*, add the `-i` flag to specify its location. If you
+previously used the `atomic-openshift-installer` command to run your
+installation, you can check *_~/.config/openshift/hosts_* for the last inventory
+file that was used.
++
+** To upgrade control plane and nodes in a single phase, run the *_upgrade.yml_*
+playbook:
++
+----
+$ cd /usr/share/ansible/openshift-ansible
+$ ansible-playbook -i </path/to/inventory/file> \
+    playbooks/byo/openshift-cluster/upgrades/v3_11/upgrade.yml
+----
+
+** To upgrade the control plane and nodes in separate phases:
+.. Upgrade the control plane by running the *_upgrade_control_plane.yaml_*
+playbook:
++
+----
+$ cd /usr/share/ansible/openshift-ansible
+$ ansible-playbook -i </path/to/inventory/file> \
+    playbooks/byo/openshift-cluster/upgrades/v3_11/upgrade_control_plane.yml
+----
+
+.. Upgrade the nodes by running the *_upgrade_nodes.yaml_* playbook:
++
+----
+$ cd /usr/share/ansible/openshift-ansible
+$ ansible-playbook -i </path/to/inventory/file> \
+    playbooks/byo/openshift-cluster/upgrades/v3_11/upgrade_nodes.yml \
+    [-e <customized_node_upgrade_variables>] <1>
+----
+<1> See xref:customizing-node-upgrades[Customizing Node Upgrades] for any desired
+`<customized_node_upgrade_variables>`.
++
+If you are upgrading the nodes in groups as described in
+xref:customizing-node-upgrades[Customizing Node Upgrades], continue running the
+*_upgrade_nodes.yml_* playbook until all nodes are upgraded.
+// tag::automated_upgrade_after_reboot[]
+
+. After all master and node upgrades have completed, reboot all hosts.
+
+. If you use aggregated logging, xref:upgrading-efk-logging-stack[upgrade the EFK logging stack].
+
+. If you use cluster metrics, xref:upgrading-cluster-metrics[upgrade cluster metrics].
+
+. xref:verifying-the-upgrade[Verify the upgrade].
+
+[[special-considerations-for-glusterfs]]
+== Upgrading {product-title} when using containerized GlusterFS
+
+When upgrading {product-title}, you must upgrade the set of nodes where
+GlusterFS pods run. However, because these pods run as part of a daemonset, you
+cannot use `drain` or `unschedule` commands to terminate and evacuate the
+GlusterFS pods. To avoid data availability and cluster corruption, you must also
+upgrade nodes that host GlusterFS pods one at a time to ensure that the upgrade
+process completes on a node that runs GlusterFS before the upgrade starts on the
+next node.
+
+To upgrade {product-title} if you use containerized GlusterFS:
+
+. xref:upgrading-control-plane-nodes-separate-phases[Upgrade the control plane]
+(the master nodes and etcd nodes).
+
+. Upgrade standard `infra` nodes (router, registry, logging, and metrics).
++
+[NOTE]
+====
+If any of the nodes in those groups are running GlusterFS, perform step 4 of
+this procedure at the same time. GlusterFS nodes must be upgraded along with
+other nodes in their class (`app` versus `infra`), one at a time.
+====
+
+. Upgrade standard nodes running application containers.
++
+[NOTE]
+====
+If any of the nodes in those groups are running GlusterFS, perform step 4 of
+this procedure at the same time. GlusterFS nodes must be upgraded along with
+other nodes in their class (`app` versus `infra`), one at a time.
+====
+
+. Upgrade the {product-title} nodes running GlusterFS one at a time.
+
+.. Add a label to the node you want to upgrade:
++
+----
+$ oc label node <node_name> type=upgrade
+----
+
+.. To run the upgrade playbook on a single node,
+use `-e openshift_upgrade_nodes_label="type=upgrade"`.
+
+.. Wait for the GlusterFS pod to respawn and appear.
+
+.. `oc rsh` into the pod and verify all volumes are healed:
++
+----
+$ oc rsh <GlusterFS_pod_name>
+$ for vol in `gluster volume list`; do gluster volume heal $vol info; done
+----
++
+Ensure all of the volumes are healed and there are no outstanding tasks. The
+`heal info` command lists all pending entries for a given volume's heal process.
+A volume is considered healed when `Number of entries` for that volume is `0`.
+
+.. Remove the upgrade label and go to the next GlusterFS node.
++
+----
+$ oc label node <node_name> type-
+----
+
+
+[[upgrading-optional-components]]
+== Upgrading optional components
+
+If you installed an EFK logging stack or cluster metrics, you must separately
+upgrade the component.
+
+[[upgrading-efk-logging-stack]]
+=== Upgrading the EFK Logging Stack
+
+To upgrade an existing EFK logging stack deployment, you review your parameters
+and run the *_openshift-logging/config.yml_* playbook.
+
+. Review how to
+xref:../install_config/aggregate_logging.adoc#aggregate-logging-ansible-variables[specify logging Ansible variables]
+and update your Ansible inventory file to at least set the
+following required variable in the `[OSEv3:vars]` section:
++
+----
+[OSEv3:vars]
+
+openshift_logging_install_logging=true <1>
+----
+<1> Enables the ability to upgrade the logging stack.
+
+. Update any other `openshift_logging_*` variables that you want to override the
+default values for, as described in
+xref:../install_config/aggregate_logging.adoc#aggregate-logging-ansible-variables[Specifying Logging Ansible Variables].
+
+. If your Fluentd `DeploymentConfig` and `DaemonSet` parameters for the EFK
+components set `imagePullPolicy` to `IfNotPresent`, set them to `Always`:
++
+----
+        image: <image_name>:<vX.Y>
+        imagePullPolicy: Always
+----
+
+. Run the *_openshift-logging/config.yml_* playbook according to the
+xref:../install_config/aggregate_logging.adoc#deploying-the-efk-stack[deploying
+the EFK stack] instructions to complete the logging upgrade. You run the
+installation playbook for the new {product-title} version to upgrade the
+logging deployment.
+
+[[upgrading-cluster-metrics]]
+=== Upgrading cluster metrics
+
+To upgrade an existing cluster metrics deployment, you review your parameters
+and run the *_openshift-metrics/config.yml_* playbook.
+
+. Review how to
+xref:../install_config/cluster_metrics.adoc#metrics-ansible-variables[specify
+metrics Ansible variables]
+and update your Ansible inventory file to at least set the
+following required variable in the `[OSEv3:vars]` section:
++
+----
+[OSEv3:vars]
+
+openshift_metrics_install_metrics=true <1>
+openshift_metrics_hawkular_hostname=<fqdn> <2>
+openshift_metrics_cassandra_storage_type=(emptydir|pv|dynamic) <3>
+----
+<1> Enables the ability to upgrade the metrics deployment.
+<2> Used for the Hawkular Metrics route. Specify a fully qualified
+domain name.
+<3> Specify the same type as the previous deployment.
+
+. Update any other `openshift_metrics_*` variables that you want to override the
+default values for, as described in
+xref:../install_config/cluster_metrics.adoc#metrics-ansible-variables[Specifying
+Metrics Ansible Variables].
+
+. Run the *_openshift-metrics/config.yml_* playbook according to the
+xref:../install_config/cluster_metrics.adoc#deploying-the-metrics-components[deploying
+the metrics deployment] instructions to complete the metrics upgrade. You run the
+installation playbook for the new {product-title} version to upgrade the
+logging deployment.
+
+[[verifying-the-upgrade]]
+== Verifying the upgrade
+
+Ensure that:
+
+* The cluster is healthy.
+* The master, node, and etcd services or static pods are running well.
+* The {product-title}, `docker-registry`, and router versions are correct.
+* The original applications are still available, and new application can be created.
+* Running `oc adm diagnostics` produces no errors.
+
+To verify the upgrade:
+
+. Check that all nodes are marked as *Ready*:
++
+----
+# oc get nodes
+NAME                     STATUS    ROLES        AGE       VERSION
+master1.example.com      Ready     master       47d       v1.11.0+d4cacc0
+master2.example.com      Ready     master       47d       v1.11.0+d4cacc0
+master3.example.com      Ready     master       47d       v1.11.0+d4cacc0
+infra-node1.example.com  Ready     infra        47d       v1.11.0+d4cacc0
+infra-node2.example.com  Ready     infra        47d       v1.11.0+d4cacc0
+node1.example.com        Ready     compute      47d       v1.11.0+d4cacc0
+node2.example.com        Ready     compute      47d       v1.11.0+d4cacc0
+----
+
+. Verify that the static pods for the control plane are running:
++
+----
+# oc get pods -n kube-system
+NAME                                 READY     STATUS    RESTARTS   AGE
+master-api-master1.example.com           1/1       Running   4          1h
+master-controllers-master1.example.com   1/1       Running   3          1h
+master-etcd-master1.example.com          1/1       Running   6          5d
+[...]
+----
+
+. Verify that you are running the expected versions of the *docker-registry*
+and *router* images, if deployed:
++
+[subs=attributes+]
+----
+ifdef::openshift-enterprise[]
+# oc get -n default dc/docker-registry -o json | grep \"image\"
+    "image": "openshift3/ose-docker-registry:{latest-short-tag}",
+# oc get -n default dc/router -o json | grep \"image\"
+    "image": "openshift3/ose-haproxy-router:{latest-short-tag}",
+endif::[]
+ifdef::openshift-origin[]
+# oc get -n default dc/docker-registry -o json | grep \"image\"
+    "image": "openshift/origin-docker-registry:{latest-short-tag}",
+# oc get -n default dc/router -o json | grep \"image\"
+    "image": "openshift/origin-haproxy-router:{latest-short-tag}",
+endif::[]
+----
+
+. Use the diagnostics tool on the master to look for common issues:
++
+----
+# oc adm diagnostics
+...
+[Note] Summary of diagnostics execution:
+[Note] Completed with no errors or warnings seen.
+----

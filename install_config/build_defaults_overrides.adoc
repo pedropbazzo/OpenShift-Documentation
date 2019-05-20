@@ -1,0 +1,302 @@
+[[install-config-build-defaults-overrides]]
+= Configuring Global Build Defaults and Overrides
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+
+toc::[]
+
+
+== Overview
+
+// tag::installconfig_build_defaults_overrides[]
+Developers can define settings in specific build configurations within their
+projects, such as
+xref:../dev_guide/builds/build_inputs.adoc#using-a-proxy-for-git-cloning[configuring a proxy
+for Git cloning]. Rather than requiring developers to define certain settings in
+each build configuration, administrators can use admission
+control plug-ins to configure global build defaults and overrides that
+automatically use these settings in any build.
+
+The settings from these plug-ins are used only during the build process
+but are not set in the build configurations or
+builds themselves. Configuring the settings through the plug-ins
+allows administrators to change the global configuration at any time, and any
+builds that are re-run from existing build configurations or builds are assigned the
+new settings.
+
+* The `BuildDefaults` admission control plug-in allows administrators to set
+global defaults for settings such as the Git HTTP and HTTPS proxy, as well as
+default environment variables and image labels. These defaults do not overwrite
+values that have been configured for a specific build. However, if those values
+are not present on the build definition, they are set to the default value.
+
+* The `BuildOverrides` admission control plug-in allows administrators to
+override a setting in a build, regardless of the value stored in the build. The plug-in
+currently supports xref:manually-setting-global-build-overrides[overriding the `forcePull` 
+flag on a build strategy] to force refreshing the local image from the registry during a build. 
+Refreshing ensures that users can build only with images that
+they are allowed to pull. The plug-in can also be configured to apply a set of
+image labels to every built image.
++
+For information on configuring the `BuildOverrides` admission control plug-in and
+the values you can override, see
+xref:manually-setting-global-build-overrides[Manually Setting Global Build Overrides].
+
+The default node selectors and the `BuildDefaults` or `BuildOverride` admission plug-ins work together as follows:
+
+* The default project node selector, defined in the `projectConfig.defaultNodeSelector` field in the master configuration file,  
+is applied to the pods created in all projects without a specified `nodeSelector` value. These settings are applied to builds with `nodeSelector="null"` 
+on clusters where the `BuildDefaults` or `BuildOverride` nodeselector is not set. 
+
+* The cluster-wide default build node selector, `admissionConfig.pluginConfig.BuildDefaults.configuration.nodeSelector`, 
+is applied only if the `nodeSelector="null"` parameter is set in the build configuration. `nodeSelector=null` is the default setting.
+
+* With a default project or cluster-wide node selector, the default setting is added as an AND to the build node selector, 
+which is set by the `BuildDefaults` or `BuildOverride` admission plug-ins. These settings mean that the build will be scheduled only 
+to nodes that satisfy the `BuildOverrides` node selector AND the project default node selector. 
+
++
+[NOTE]
+====
+You can define a hard limit on how long build pods can run by using the
+xref:../admin_guide/managing_pods.adoc#manage-pods-limit-run-once-duration[*RunOnceDuration* plugin].
+====
+
+
+[[setting-global-build-defaults]]
+== Setting Global Build Defaults
+
+You can set global build defaults two ways:
+
+- xref:ansible-setting-global-build-defaults[using Ansible]
+- xref:manually-setting-global-build-defaults[manually by modifying the *_master-config.yaml_* file]
+
+[[ansible-setting-global-build-defaults]]
+=== Configuring Global Build Defaults with Ansible
+
+ifndef::openshift-dedicated[]
+During cluster installations, the `BuildDefaults` plug-in can be configured
+using
+xref:../install/configuring_inventory_file.adoc#advanced-install-configuring-global-proxy[the following parameters], which are configurable in the inventory file:
+endif::[]
+ifdef::openshift-dedicated[]
+During cluster installations, the `BuildDefaults` plug-in can
+be configured using the following parameters, which are configurable in the inventory file:
+endif::[]
+
+
+- `openshift_builddefaults_http_proxy`
+- `openshift_builddefaults_https_proxy`
+- `openshift_builddefaults_no_proxy`
+- `openshift_builddefaults_git_http_proxy`
+- `openshift_builddefaults_git_https_proxy`
+- `openshift_builddefaults_git_no_proxy`
+- `openshift_builddefaults_image_labels`
+- `openshift_builddefaults_nodeselectors`
+- `openshift_builddefaults_annotations`
+- `openshift_builddefaults_resources_requests_cpu`
+- `openshift_builddefaults_resources_requests_memory`
+- `openshift_builddefaults_resources_limits_cpu`
+- `openshift_builddefaults_resources_limits_memory`
+
+.Example Build Defaults Configuration with Ansible
+====
+----
+# These options configure the BuildDefaults admission controller which injects
+# configuration into Builds. Proxy related values will default to the global proxy
+# config values. You only need to set these if they differ from the global proxy settings.
+openshift_builddefaults_http_proxy=http://USER:PASSWORD@HOST:PORT
+openshift_builddefaults_https_proxy=https://USER:PASSWORD@HOST:PORT
+openshift_builddefaults_no_proxy=mycorp.com
+openshift_builddefaults_git_http_proxy=http://USER:PASSWORD@HOST:PORT
+openshift_builddefaults_git_https_proxy=https://USER:PASSWORD@HOST:PORT
+openshift_builddefaults_git_no_proxy=mycorp.com
+openshift_builddefaults_image_labels=[{'name':'imagelabelname1','value':'imagelabelvalue1'}]
+openshift_builddefaults_nodeselectors={'nodelabel1':'nodelabelvalue1'}
+openshift_builddefaults_annotations={'annotationkey1':'annotationvalue1'}
+openshift_builddefaults_resources_requests_cpu=100m
+openshift_builddefaults_resources_requests_memory=256Mi
+openshift_builddefaults_resources_limits_cpu=1000m
+openshift_builddefaults_resources_limits_memory=512Mi
+
+# Or you may optionally define your own build defaults configuration serialized as json
+#openshift_builddefaults_json='{"BuildDefaults":{"configuration":{"apiVersion":"v1","env":[{"name":"HTTP_PROXY","value":"http://proxy.example.com.redhat.com:3128"},{"name":"NO_PROXY","value":"ose3-master.example.com"}],"gitHTTPProxy":"http://proxy.example.com:3128","gitNoProxy":"ose3-master.example.com","kind":"BuildDefaultsConfig"}}}'
+----
+====
+
+[[manually-setting-global-build-defaults]]
+=== Manually Setting Global Build Defaults
+
+To configure the `BuildDefaults` plug-in:
+
+. Add a configuration for it in the *_/etc/origin/master/master-config.yaml_*
+ file on the master nodes:
++
+====
+[source,yaml]
+----
+admissionConfig:
+  pluginConfig:
+    BuildDefaults:
+      configuration:
+        apiVersion: v1
+        kind: BuildDefaultsConfig
+        gitHTTPProxy: http://my.proxy:8080 <1>
+        gitHTTPSProxy: https://my.proxy:8443 <2>
+        gitNoProxy: somedomain.com, otherdomain.com <3>
+        env:
+        - name: HTTP_PROXY <4>
+          value: http://my.proxy:8080
+        - name: HTTPS_PROXY <5>
+          value: https://my.proxy:8443
+        - name: BUILD_LOGLEVEL <6>
+          value: "4"
+        - name: CUSTOM_VAR <7>
+          value: custom_value
+        imageLabels:
+        - name: url <8>
+          value: https://containers.example.org
+        - name: vendor
+          value: ExampleCorp Ltd.
+        nodeSelector: <9>
+          key1: value1
+          key2: value2
+        annotations: <10>
+          key1: value1
+          key2: value2
+        resources: <11>
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "100m"
+            memory: "256Mi"
+----
+<1> Sets the HTTP proxy to use when cloning source code from a Git repository.
+<2> Sets the HTTPS proxy to use when cloning source code from a Git repository.
+<3> Sets the list of domains for which proxying should not be performed.
+<4> Default environment variable that sets the HTTP proxy to use during the build.
+This can be used for downloading dependencies during the assemble and build
+phases.
+<5> Default environment variable that sets the HTTPS proxy to use during the
+build. This can be used for downloading dependencies during the assemble and
+build phases.
+<6> Default environment variable that sets the build log level during the build.
+<7> Additional default environment variable that will be added to
+every build.
+<8> Labels to be applied to every image built. These can be overridden in `BuildConfig`.
+<9> Build pods will only run on nodes with the `key1=value2` and `key2=value2` labels.
+    Users can define a different set of `nodeSelectors` for their builds, causing these
+    values to be ignored.
+<10> Build pods will have these annotations added to them.
+<11> Sets the default resources to the build pod if the `BuildConfig` does not have related resource defined.
+
+====
+
+. Restart the master services for the changes to take effect:
++
+----
+# master-restart api
+# master-restart controllers
+----
+
+[[setting-global-build-overrides]]
+== Setting Global Build Overrides
+
+You can set global build overrides two ways:
+
+- xref:ansible-setting-global-build-overrides[using Ansible]
+- xref:manually-setting-global-build-overrides[manually by modifying the *_master-config.yaml_* file]
+
+[[ansible-setting-global-build-overrides]]
+=== Configuring Global Build Overrides with Ansible
+
+During cluster installations, the `BuildOverrides` plug-in can be configured
+using the following parameters, which are configurable in the inventory file:
+
+- `openshift_buildoverrides_force_pull`
+- `openshift_buildoverrides_image_labels`
+- `openshift_buildoverrides_nodeselectors`
+- `openshift_buildoverrides_annotations`
+- `openshift_buildoverrides_tolerations`
+
+.Example Build Overrides Configuration with Ansible
+====
+----
+# These options configure the BuildOverrides admission controller which injects
+# configuration into Builds.
+openshift_buildoverrides_force_pull=true
+openshift_buildoverrides_image_labels=[{'name':'imagelabelname1','value':'imagelabelvalue1'}]
+openshift_buildoverrides_nodeselectors={'nodelabel1':'nodelabelvalue1'}
+openshift_buildoverrides_annotations={'annotationkey1':'annotationvalue1'}
+openshift_buildoverrides_tolerations=[{'key':'mykey1','value':'myvalue1','effect':'NoSchedule','operator':'Equal'}]
+
+# Or you may optionally define your own build overrides configuration serialized as json
+#openshift_buildoverrides_json='{"BuildOverrides":{"configuration":{"apiVersion":"v1","kind":"BuildOverridesConfig","forcePull":"true","tolerations":[{'key':'mykey1','value':'myvalue1','effect':'NoSchedule','operator':'Equal'}]}}}'
+----
+====
+
+[[manually-setting-global-build-overrides]]
+=== Manually Setting Global Build Overrides
+
+To configure the `BuildOverrides` plug-in:
+
+. Add a configuration for it in the
+*_/etc/origin/master/master-config.yaml_* file on masters:
++
+====
+[source,yaml]
+----
+admissionConfig:
+  pluginConfig:
+    BuildOverrides:
+      configuration:
+        apiVersion: v1
+        kind: BuildOverridesConfig
+        forcePull: true <1>
+        imageLabels:
+        - name: distribution-scope <2>
+          value: private
+        nodeSelector: <3>
+          key1: value1
+          key2: value2
+        annotations: <4>
+          key1: value1
+          key2: value2
+        tolerations: <5>
+        - key: mykey1
+          value: myvalue1
+          effect: NoSchedule
+          operator: Equal
+        - key: mykey2
+          value: myvalue2
+          effect: NoExecute
+          operator: Equal
+----
+<1> Force all builds to pull their builder image and any source images before
+starting the build.
+<2> Additional labels to be applied to every image built. Labels
+defined here take precedence over labels defined in `BuildConfig`.
+<3> Build pods will only run on nodes with the `key1=value2` and `key2=value2` labels.
+    Users can define additional key/value labels to further constrain the set of nodes
+    a build runs on, but the *node* must have at least these labels.
+<4> Build pods will have these annotations added to them.
+<5> Build pods will have any existing tolerations overridden by those listed here.
+
+
+====
+
+. Restart the master services for the changes to take effect:
++
+====
+----
+# master-restart api
+# master-restart controllers
+----
+====
+// end::installconfig_build_defaults_overrides[]

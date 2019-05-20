@@ -1,0 +1,64 @@
+[[go-client-getting-started]]
+= Getting Started
+{product-author}
+{product-version}
+:data-uri:
+:icons:
+:experimental:
+:toc: macro
+:toc-title:
+
+toc::[]
+
+== Getting Started
+
+{product-title} includes a client library for creating applications
+to interact with {product-title} and Kubernetes clusters. Using the
+Go programming language (golang), you write programs to perform
+actions (such as get, list, watch, create, update, or delete) on
+{product-title} and Kubernetes resources (such as pods, services,
+and replicationcontrollers).
+
+Both the client library and API object definitions are versioned, with separate
+branches corresponding to major versions of {product-title}. You need
+to match the client library version you use to the version of {product-title}
+with which you are interacting.
+
+For client-go applications, you use a
+link:https://github.com/openshift/client-go[client library] and
+link:https://github.com/openshift/api[API object definitions] to create
+applications that interact with the OpenShift REST API. The openshift/client-go
+library is designed to be compatible with and complementary to the
+kubernetes/client-go library. To get started, we recommend you follow these
+general steps:
+
+. Read the link:https://github.com/kubernetes/client-go/blob/master/README.md[client-go README]: This file explains the components of Kubernetes
+client-go, as well as which client-go versions you should use with different
+versions of Kubernetes. You can also see link:https://github.com/kubernetes/client-go/tree/master/examples/in-cluster-client-configuration[in-cluster]
+and link:https://github.com/kubernetes/client-go/tree/master/examples/out-of-cluster-client-configuration[out-of-cluster]
+examples of go client applications. Refer to
+link:https://github.com/openshift/client-go[OpenShift Client in Go] for
+specifics about OpenShift compatibility issues.
+
+. Read the link:https://github.com/openshift/client-go/blob/master/INSTALL.md[client-go INSTALL]: This helps you set up your client-go environment by vendoring (downloading) the correct code and helps you understand the tools you need to create applications.  Dependency management in particular is addressed.
+
+. Review
+link:https://github.com/kubernetes/client-go/tree/master/examples[client-go examples]:
+These include examples of cluster authentication and managing resources, as well
+as more advanced concepts for interfacing with work queues and custom resource
+definitions.
+
+. Review link:https://github.com/openshift/client-go/tree/master/examples/build[client-go build operations]: This example demonstrates basic operations for using build resources. These include `List builds`, `Retrieve details of a build`, and `Trigger a build`.
+
+. Review the link:https://github.com/openshift/client-go/[client-go source code]: Go through the client-go source code, which contains the client-side code to invoke most actions against a cluster. To use the source code in a sample go project, all you need to do is to vendor these artifacts and write the code. When using Glide make sure to use 0.13.
+
+The rest of this guide provides examples of client-go code used to perform specific tasks:
+
+* xref:../go_client/connecting_to_the_cluster.adoc#go-client-connecting-to-the-cluster[Connecting to the cluster]
+* xref:../go_client/tracing_api_requests_and_responses.adoc#go-client-tracing-api-requests-and-responses[Tracing API Requests and Responses]
+* xref:../go_client/standard_api_operations.adoc#go-client-standard-api-operations[Standard API Operations]
+* xref:../go_client/serializing_and_deserializing.adoc#go-client-serializing-and-deserializing[Serializing and Deserializing]
+* xref:../go_client/instantiating_templates.adoc#go-client-instantiating-templates[Instantiating Templates]
+* xref:../go_client/executing_remote_processes.adoc#go-client-executing-remote-processes[Executing Remote Processes]
+
+For information on the Kubernetes and OpenShift REST APIs, see the xref:../rest_api/index.adoc#rest-api-index[REST API Reference].

@@ -1,0 +1,111 @@
+////
+Project backup
+
+Module included in the following assemblies:
+
+* day_two_guide/project_level_tasks.adoc
+* day_two_guide/environment_backup.adoc
+////
+
+[id='backing-up-project_{context}']
+= Backing up a project
+
+Creating a backup of all relevant data involves exporting all important
+information, then restoring into a new project.
+
+[NOTE]
+====
+Currently, a {product-title} project back up and restore tool is being developed
+by Red Hat. See the following bug for more information:
+
+* https://bugzilla.redhat.com/show_bug.cgi?id=1303205[bugzilla 1303205].
+====
+
+[discrete]
+== Procedure
+
+. List all the relevant data to back up:
++
+----
+$ oc get all
+NAME         TYPE      FROM      LATEST
+bc/ruby-ex   Source    Git       1
+
+NAME               TYPE      FROM          STATUS     STARTED         DURATION
+builds/ruby-ex-1   Source    Git@c457001   Complete   2 minutes ago   35s
+
+NAME                 DOCKER REPO                                     TAGS      UPDATED
+is/guestbook         10.111.255.221:5000/myproject/guestbook         latest    2 minutes ago
+is/hello-openshift   10.111.255.221:5000/myproject/hello-openshift   latest    2 minutes ago
+is/ruby-22-centos7   10.111.255.221:5000/myproject/ruby-22-centos7   latest    2 minutes ago
+is/ruby-ex           10.111.255.221:5000/myproject/ruby-ex           latest    2 minutes ago
+
+NAME                 REVISION   DESIRED   CURRENT   TRIGGERED BY
+dc/guestbook         1          1         1         config,image(guestbook:latest)
+dc/hello-openshift   1          1         1         config,image(hello-openshift:latest)
+dc/ruby-ex           1          1         1         config,image(ruby-ex:latest)
+
+NAME                   DESIRED   CURRENT   READY     AGE
+rc/guestbook-1         1         1         1         2m
+rc/hello-openshift-1   1         1         1         2m
+rc/ruby-ex-1           1         1         1         2m
+
+NAME                  CLUSTER-IP       EXTERNAL-IP   PORT(S)             AGE
+svc/guestbook         10.111.105.84    <none>        3000/TCP            2m
+svc/hello-openshift   10.111.230.24    <none>        8080/TCP,8888/TCP   2m
+svc/ruby-ex           10.111.232.117   <none>        8080/TCP            2m
+
+NAME                         READY     STATUS      RESTARTS   AGE
+po/guestbook-1-c010g         1/1       Running     0          2m
+po/hello-openshift-1-4zw2q   1/1       Running     0          2m
+po/ruby-ex-1-build           0/1       Completed   0          2m
+po/ruby-ex-1-rxc74           1/1       Running     0          2m
+----
+
+. Export the project objects to a `.yaml` or `.json` file.
+** To export the project objects into a `project.yaml` file:
++
+----
+$ oc get -o yaml --export all > project.yaml
+----
+** To export the project objects into a `project.json` file:
++
+----
+$ oc get -o json --export all > project.json
+----
+
+. Export the project's `role bindings`, `secrets`,
+`service accounts`, and `persistent volume claims`:
++
+----
+$ for object in rolebindings serviceaccounts secrets imagestreamtags cm egressnetworkpolicies rolebindingrestrictions limitranges resourcequotas pvc templates cronjobs statefulsets hpa deployments replicasets poddisruptionbudget endpoints
+do
+  oc get -o yaml --export $object > $object.yaml
+done
+----
+
+. To list all the namespaced objects:
++
+----
+$ oc api-resources --namespaced=true -o name
+----
+
+. Some exported objects can rely on specific metadata or references to unique
+IDs in the project. This is a limitation on the usability of the recreated
+objects.
++
+When using `imagestreams`, the `image` parameter of a `deploymentconfig` can
+point to a specific `sha` checksum of an image in the internal registry that
+would not exist in a restored environment. For instance, running the sample
+"ruby-ex" as `oc new-app
+centos/ruby-22-centos7~https://github.com/sclorg/ruby-ex.git` creates an
+`imagestream` `ruby-ex` using the internal registry to host the image:
++
+----
+$ oc get dc ruby-ex -o jsonpath="{.spec.template.spec.containers[].image}"
+10.111.255.221:5000/myproject/ruby-ex@sha256:880c720b23c8d15a53b01db52f7abdcbb2280e03f686a5c8edfef1a2a7b21cee
+----
++
+If importing the `deploymentconfig` as it is exported with `oc get --export` it fails
+if the image does not exist.
++
